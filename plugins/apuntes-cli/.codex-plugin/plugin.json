@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "description": "CLI/plugin for generating FAQs and compacted final reports from local study materials.",
   "author": {
-    "name": "[TODO: Author Name]",
-    "email": "[TODO: author@example.com]",
-    "url": "[TODO: https://github.com/author]"
+    "name": "Francisco Perez",
+    "email": "franutn23@gmail.com",
+    "url": "https://github.com/FranprzDev"
   },
-  "homepage": "[TODO: https://github.com/author/bibliography-report-codex]",
-  "repository": "[TODO: https://github.com/author/bibliography-report-codex]",
+  "homepage": "https://github.com/FranprzDev/apuntes-cli",
+  "repository": "https://github.com/FranprzDev/apuntes-cli",
   "license": "MIT",
   "keywords": [
     "apuntes",
@@ -22,16 +22,16 @@
     "displayName": "apuntes-cli",
     "shortDescription": "Genera FAQs y apuntes finales compactados por materia",
     "longDescription": "Usa materiales locales para preparar FAQs, compactar contenido por materia y exportar el apunte final en PDF.",
-    "developerName": "[TODO: Developer Name]",
+    "developerName": "Francisco Perez",
     "category": "Productivity",
     "capabilities": [
       "Read",
       "Write",
       "Interactive"
     ],
-    "websiteURL": "[TODO: https://github.com/author/bibliography-report-codex]",
-    "privacyPolicyURL": "[TODO: https://example.com/privacy]",
-    "termsOfServiceURL": "[TODO: https://example.com/terms]",
+    "websiteURL": "https://github.com/FranprzDev/apuntes-cli",
+    "privacyPolicyURL": "https://github.com/FranprzDev/apuntes-cli",
+    "termsOfServiceURL": "https://github.com/FranprzDev/apuntes-cli",
     "defaultPrompt": [
       "Inicializa un workspace de apuntes con templates y materias.",
       "Genera las FAQs de una materia a partir de archivos locales.",
