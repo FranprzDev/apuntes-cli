@@ -1,0 +1,42 @@
+{
+  "name": "apuntes-cli",
+  "version": "0.1.0",
+  "description": "CLI/plugin for generating FAQs and compacted final reports from local study materials.",
+  "author": {
+    "name": "[TODO: Author Name]",
+    "email": "[TODO: author@example.com]",
+    "url": "[TODO: https://github.com/author]"
+  },
+  "homepage": "[TODO: https://github.com/author/bibliography-report-codex]",
+  "repository": "[TODO: https://github.com/author/bibliography-report-codex]",
+  "license": "MIT",
+  "keywords": [
+    "apuntes",
+    "faq",
+    "compactacion",
+    "pdf",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "apuntes-cli",
+    "shortDescription": "Genera FAQs y apuntes finales compactados por materia",
+    "longDescription": "Usa materiales locales para preparar FAQs, compactar contenido por materia y exportar el apunte final en PDF.",
+    "developerName": "[TODO: Developer Name]",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "websiteURL": "[TODO: https://github.com/author/bibliography-report-codex]",
+    "privacyPolicyURL": "[TODO: https://example.com/privacy]",
+    "termsOfServiceURL": "[TODO: https://example.com/terms]",
+    "defaultPrompt": [
+      "Inicializa un workspace de apuntes con templates y materias.",
+      "Genera las FAQs de una materia a partir de archivos locales.",
+      "Compacta una materia y exporta el apunte final en PDF."
+    ],
+    "brandColor": "#2859C5"
+  }
+}

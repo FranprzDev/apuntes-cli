@@ -1,0 +1,6 @@
+{
+  "name": "example-materia",
+  "title": "Titulo de ejemplo",
+  "template": "../../templates/template_base.html",
+  "content": "./content.md"
+}

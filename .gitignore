@@ -1,0 +1,9 @@
+node_modules/
+**/node_modules/
+.DS_Store
+Thumbs.db
+.git/
+.agents/
+plugins/apuntes-cli/dist/
+plugins/apuntes-cli/drafts/
+plugins/apuntes-cli/working/
