@@ -92,3 +92,29 @@ npm run full -- --subject "nombre de materia"
 
 - The old duplicated root-level templates were replaced by the shared `templates/` + `subjects/` structure.
 - El contenido de UTN FRT debe publicarse respetando la autoría, las condiciones de uso de los materiales y la privacidad de quienes compartan apuntes.
+
+## Go CLI y MCP local
+
+El MVP incluye un binario Go local. Requiere Go 1.22+ para compilar; SQLite y FTS5 se
+incluyen mediante `modernc.org/sqlite`, por lo que no necesita CGO.
+
+```bash
+go build -o apuntes ./cmd/apuntes
+./apuntes init
+./apuntes ingest --path ./materiales
+./apuntes search subnetting
+./apuntes profile init
+./apuntes study-path --subject redes
+```
+
+El servidor MCP usa JSON-RPC por `stdio`:
+
+```bash
+./apuntes mcp
+./apuntes mcp install --agent claude
+```
+
+Herramientas disponibles: `listar_materias`, `buscar_material`, `leer_fuente`,
+`sugerir_ruta_de_estudio`, `buscar_ejercicios` y `obtener_perfil`. El índice se
+guarda en `data/index.db`; el contenido no sale del equipo. Ollama y embeddings
+son opcionales y todavía no son necesarios para el fallback FTS.
