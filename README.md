@@ -14,6 +14,14 @@ This repository contains `apuntes-cli`, a portable CLI/plugin for turning local 
 
 La herramienta debe funcionar como una biblioteca de estudio asistida por agentes. Codex, Claude Code u otro agente compatible pueden ayudar a procesar y consultar el contenido, pero el CLI debe seguir siendo portable y no depender de una cuenta, modelo o proveedor específico.
 
+## Local-first y open source
+
+El proyecto está diseñado para ejecutarse localmente y no tendrá un servicio central obligatorio. No habrá backend propio, base de datos hospedada, telemetría, cuentas de usuario ni costos operativos para el mantenedor.
+
+Cada persona conservará sus archivos y resultados en su propio equipo y podrá conectar la biblioteca con su propio Codex, Claude Code u otro agente compatible. Si el agente elegido utiliza un servicio pago, esa relación y ese costo pertenecen al usuario. También debería ser posible trabajar con modelos locales cuando el usuario los tenga disponibles.
+
+El repositorio será open source y debe evitar dependencias que obliguen al proyecto a mantener infraestructura propia. Los apuntes y materiales académicos tendrán una licencia o condición de uso explícita, separada de la licencia del código.
+
 ## Principios del producto
 
 - **Fuentes primero:** las respuestas y materiales deben basarse en archivos efectivamente cargados.
@@ -34,7 +42,7 @@ Un estudiante debería poder:
 5. Preguntar algo como “¿cómo se aplica este concepto?” y obtener una respuesta basada en sus fuentes.
 6. Revisar las referencias antes de usar la respuesta para estudiar.
 
-La primera versión se concentra en materiales locales y resultados reproducibles. Una biblioteca pública de apuntes, autenticación, colaboración entre estudiantes y búsqueda semántica quedan como extensiones posteriores.
+La primera versión se concentra en materiales locales y resultados reproducibles. Una biblioteca pública de apuntes, autenticación, colaboración entre estudiantes y búsqueda semántica quedan fuera del núcleo local y solo podrían agregarse como herramientas opcionales que el usuario ejecute o aloje por su cuenta.
 
 ## What it does
 
