@@ -1,0 +1,359 @@
+package app
+
+import (
+	"bufio"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	_ "modernc.org/sqlite"
+)
+
+type Profile struct {
+	Institution    string   `json:"institucion"`
+	Career         string   `json:"carrera"`
+	Year           int      `json:"año"`
+	ActiveSubjects []string `json:"materias_activas"`
+	Objective      string   `json:"objetivo"`
+}
+type Source struct {
+	ID       int64    `json:"id"`
+	Subject  string   `json:"subject"`
+	Title    string   `json:"title"`
+	Path     string   `json:"path"`
+	Location string   `json:"location"`
+	Text     string   `json:"text"`
+	Year     int      `json:"year"`
+	Topics   []string `json:"topics"`
+}
+type App struct {
+	Root string
+	DB   *sql.DB
+}
+
+func New(root string) (*App, error) {
+	root, _ = filepath.Abs(root)
+	if err := os.MkdirAll(filepath.Join(root, "data"), 0755); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", filepath.Join(root, "data", "index.db"))
+	if err != nil {
+		return nil, err
+	}
+	a := &App{root, db}
+	if err = a.schema(); err != nil {
+		db.Close()
+	}
+	return a, err
+}
+func (a *App) schema() error {
+	_, err := a.DB.Exec(`PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, subject TEXT NOT NULL, title TEXT, path TEXT UNIQUE NOT NULL, location TEXT, year INTEGER, topics TEXT, body TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(subject,title,path,topics,body,content='documents',content_rowid='id'); CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN INSERT INTO documents_fts(rowid,subject,title,path,topics,body) VALUES (new.id,new.subject,new.title,new.path,new.topics,new.body); END; CREATE TRIGGER IF NOT EXISTS documents_ad AFTER DELETE ON documents BEGIN INSERT INTO documents_fts(documents_fts,rowid,subject,title,path,topics,body) VALUES ('delete',old.id,old.subject,old.title,old.path,old.topics,old.body); END; CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN INSERT INTO documents_fts(documents_fts,rowid,subject,title,path,topics,body) VALUES ('delete',old.id,old.subject,old.title,old.path,old.topics,old.body); INSERT INTO documents_fts(rowid,subject,title,path,topics,body) VALUES (new.id,new.subject,new.title,new.path,new.topics,new.body); END;`)
+	return err
+}
+func (a *App) Close() {
+	if a.DB != nil {
+		a.DB.Close()
+	}
+}
+func (a *App) ingest(path string) (int, error) {
+	n := 0
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	walk := func(p string, d os.DirEntry) error {
+		if d.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(p))
+		if ext != ".md" && ext != ".txt" && ext != ".pdf" {
+			return nil
+		}
+		b, err := readFile(p, ext)
+		if err != nil {
+			return err
+		}
+		absolute, _ := filepath.Abs(p)
+		rel, _ := filepath.Rel(a.Root, absolute)
+		subj := subjectFromPath(p)
+		_, err = a.DB.Exec(`INSERT INTO documents(subject,title,path,location,year,topics,body) VALUES(?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET subject=excluded.subject,title=excluded.title,location=excluded.location,year=excluded.year,topics=excluded.topics,body=excluded.body`, subj, strings.TrimSuffix(filepath.Base(p), ext), rel, "", 0, "", string(b))
+		if err != nil {
+			return err
+		}
+		n++
+		return nil
+	}
+	if info.IsDir() {
+		err = filepath.WalkDir(path, func(p string, d os.DirEntry, e error) error {
+			if e != nil {
+				return e
+			}
+			return walk(p, d)
+		})
+	} else {
+		err = walk(path, dirEntry{info})
+	}
+	return n, err
+}
+
+type dirEntry struct{ os.FileInfo }
+
+func (d dirEntry) Type() os.FileMode          { return d.Mode() }
+func (d dirEntry) Info() (os.FileInfo, error) { return d.FileInfo, nil }
+func (d dirEntry) Name() string               { return d.FileInfo.Name() }
+func (d dirEntry) IsDir() bool                { return d.FileInfo.IsDir() }
+func (d dirEntry) Typex() os.FileMode         { return d.FileInfo.Mode() }
+func subjectFromPath(p string) string {
+	parts := strings.Split(filepath.ToSlash(p), "/")
+	for i, x := range parts {
+		if (x == "materias" || x == "materiales") && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return "general"
+}
+func readFile(p, ext string) ([]byte, error) {
+	b, e := os.ReadFile(p)
+	if ext != ".pdf" || e != nil {
+		return b, e
+	}
+	return extractPDF(b), nil
+}
+func extractPDF(b []byte) []byte {
+	s := string(b)
+	var out []string
+	for _, x := range strings.Split(s, "stream")[1:] {
+		x = strings.Split(x, "endstream")[0]
+		x = strings.ReplaceAll(x, "\\n", " ")
+		x = strings.ReplaceAll(x, "\\(", "(")
+		x = strings.ReplaceAll(x, "\\)", ")")
+		for _, line := range strings.Split(x, "\n") {
+			if strings.Contains(line, "Tj") || strings.Contains(line, "TJ") {
+				line = strings.TrimSpace(line)
+				line = strings.TrimSuffix(line, "Tj")
+				line = strings.TrimSuffix(line, "TJ")
+				line = strings.Trim(line, "[]()")
+				if line != "" {
+					out = append(out, line)
+				}
+			}
+		}
+	}
+	if len(out) == 0 {
+		return []byte("PDF digital: no se pudo extraer texto automáticamente")
+	}
+	return []byte(strings.Join(out, " "))
+}
+func (a *App) search(q string, limit int, subject string) ([]Source, error) {
+	q = ftsQuery(q)
+	if q == "" {
+		return nil, nil
+	}
+	args := []any{q}
+	extra := ""
+	if subject != "" {
+		extra = " AND d.subject = ?"
+		args = append(args, subject)
+	}
+	args = append(args, limit)
+	rows, err := a.DB.Query(`SELECT d.id,d.subject,d.title,d.path,d.location,d.year,d.topics,d.body FROM documents_fts f JOIN documents d ON d.id=f.rowid WHERE documents_fts MATCH ?`+extra+` ORDER BY bm25(documents_fts) LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Source
+	for rows.Next() {
+		var s Source
+		var topics string
+		if err := rows.Scan(&s.ID, &s.Subject, &s.Title, &s.Path, &s.Location, &s.Year, &topics, &s.Text); err != nil {
+			return nil, err
+		}
+		s.Topics = strings.Fields(topics)
+		s.Text = snippet(s.Text, q)
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+func ftsQuery(q string) string {
+	var parts []string
+	for _, x := range strings.Fields(q) {
+		x = strings.Map(func(r rune) rune {
+			if strings.ContainsRune(`"'():*+-`, r) {
+				return -1
+			}
+			return r
+		}, x)
+		if x != "" {
+			parts = append(parts, "\""+x+"\"")
+		}
+	}
+	return strings.Join(parts, " AND ")
+}
+func snippet(s, q string) string {
+	if len(s) <= 500 {
+		return s
+	}
+	words := strings.Fields(q)
+	pos := strings.Index(strings.ToLower(s), strings.ToLower(words[0]))
+	if pos < 0 {
+		pos = 0
+	}
+	start := pos - 180
+	if start < 0 {
+		start = 0
+	}
+	end := start + 500
+	if end > len(s) {
+		end = len(s)
+	}
+	return s[start:end]
+}
+func (a *App) profile() (Profile, error) {
+	var p Profile
+	b, e := os.ReadFile(filepath.Join(a.Root, "data", "profile.json"))
+	if os.IsNotExist(e) {
+		return p, nil
+	}
+	if e != nil {
+		return p, e
+	}
+	e = json.Unmarshal(b, &p)
+	return p, e
+}
+func (a *App) saveProfile(p Profile) error {
+	b, _ := json.MarshalIndent(p, "", "  ")
+	return os.WriteFile(filepath.Join(a.Root, "data", "profile.json"), append(b, '\n'), 0644)
+}
+
+func Run(args []string, out io.Writer, in io.Reader) error {
+	root, _ := os.Getwd()
+	if len(args) == 0 {
+		return errors.New("uso: apuntes init|ingest|index|search|profile|mcp|study-path")
+	}
+	a, e := New(root)
+	if e != nil {
+		return e
+	}
+	defer a.Close()
+	switch args[0] {
+	case "init":
+		return initWorkspace(a, out)
+	case "ingest":
+		p := "./materiales"
+		if len(args) > 2 && args[1] == "--path" {
+			p = args[2]
+		}
+		n, e := a.ingest(p)
+		if e == nil {
+			fmt.Fprintf(out, "%d fuentes indexadas\n", n)
+		}
+		return e
+	case "index":
+		return rebuild(a, out)
+	case "search":
+		if len(args) < 2 {
+			return errors.New("falta la consulta")
+		}
+		r, e := a.search(strings.Join(args[1:], " "), 10, "")
+		return printJSON(out, r, e)
+	case "profile":
+		return profileCmd(a, args[1:], in, out)
+	case "study-path":
+		return studyPath(a, args[1:], out)
+	case "mcp":
+		return ServeMCP(a, in, out, args[1:])
+	default:
+		return fmt.Errorf("comando desconocido: %s", args[0])
+	}
+}
+func initWorkspace(a *App, out io.Writer) error {
+	for _, p := range []string{"data/materias", "materiales"} {
+		if e := os.MkdirAll(filepath.Join(a.Root, p), 0755); e != nil {
+			return e
+		}
+	}
+	fmt.Fprintln(out, "workspace inicializado en data/")
+	return nil
+}
+func rebuild(a *App, out io.Writer) error {
+	_, e := a.DB.Exec(`INSERT INTO documents_fts(documents_fts) VALUES('rebuild')`)
+	if e == nil {
+		fmt.Fprintln(out, "índice reconstruido")
+	}
+	return e
+}
+func printJSON(out io.Writer, v any, e error) error {
+	if e != nil {
+		return e
+	}
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+func profileCmd(a *App, args []string, in io.Reader, out io.Writer) error {
+	if len(args) > 0 && (args[0] == "init" || args[0] == "edit") {
+		p := Profile{}
+		if args[0] == "edit" {
+			var e error
+			p, e = a.profile()
+			if e != nil {
+				return e
+			}
+		}
+		sc := bufio.NewScanner(in)
+		for _, q := range []struct {
+			k   string
+			dst *string
+		}{{"Institución", &p.Institution}, {"Carrera", &p.Career}, {"Objetivo", &p.Objective}} {
+			fmt.Fprint(out, q.k+": ")
+			sc.Scan()
+			*q.dst = sc.Text()
+		}
+		fmt.Fprint(out, "Materias activas (coma separada): ")
+		sc.Scan()
+		p.ActiveSubjects = strings.FieldsFunc(sc.Text(), func(r rune) bool { return r == ',' || r == ';' })
+		if e := a.saveProfile(p); e != nil {
+			return e
+		}
+		fmt.Fprintln(out, "perfil guardado")
+		return nil
+	}
+	p, e := a.profile()
+	return printJSON(out, p, e)
+}
+func studyPath(a *App, args []string, out io.Writer) error {
+	subj := ""
+	for i := range args {
+		if args[i] == "--subject" && i+1 < len(args) {
+			subj = args[i+1]
+		}
+	}
+	r, e := a.search("máscaras CIDR subredes ejercicios", 20, subj)
+	if e != nil {
+		return e
+	}
+	return printJSON(out, map[string]any{"subject": subj, "steps": []string{"Máscaras y notación CIDR", "Cálculo de subredes", "Ejercicios prácticos"}, "sources": r}, nil)
+}
+func readLine(r io.Reader) (string, error) {
+	b := bufio.NewReader(r)
+	s, e := b.ReadString('\n')
+	return strings.TrimSpace(s), e
+}
+func parseInt(s string, d int) int {
+	v, e := strconv.Atoi(s)
+	if e != nil {
+		return d
+	}
+	return v
+}
+
+var _ = context.Background
+var _ = readLine
+var _ = parseInt

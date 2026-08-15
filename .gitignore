@@ -7,3 +7,12 @@ Thumbs.db
 plugins/apuntes-cli/dist/
 plugins/apuntes-cli/drafts/
 plugins/apuntes-cli/working/
+
+# Local study data and SQLite index (never publish private materials)
+data/index.db
+data/profile.json
+data/progress.json
+materiales/
+!materiales/
+!materiales/redes/
+!materiales/redes/*

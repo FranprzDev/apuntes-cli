@@ -1,7 +1,7 @@
 {
   "name": "apuntes-cli",
   "version": "0.1.0",
-  "description": "CLI/plugin for generating FAQs and compacted final reports from local study materials.",
+  "description": "Biblioteca de estudio para organizar materiales de UTN FRT, generar FAQs, responder preguntas fundamentadas y crear apuntes compactados.",
   "author": {
     "name": "Francisco Perez",
     "email": "franutn23@gmail.com",
@@ -20,8 +20,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "apuntes-cli",
-    "shortDescription": "Genera FAQs y apuntes finales compactados por materia",
-    "longDescription": "Usa materiales locales para preparar FAQs, compactar contenido por materia y exportar el apunte final en PDF.",
+    "shortDescription": "Estudia materias de UTN FRT con tus fuentes",
+    "longDescription": "Organiza materiales locales por materia, genera FAQs, responde preguntas basadas en las fuentes y exporta apuntes compactados en HTML y PDF.",
     "developerName": "Francisco Perez",
     "category": "Productivity",
     "capabilities": [
@@ -33,8 +33,9 @@
     "privacyPolicyURL": "https://github.com/FranprzDev/apuntes-cli",
     "termsOfServiceURL": "https://github.com/FranprzDev/apuntes-cli",
     "defaultPrompt": [
-      "Inicializa un workspace de apuntes con templates y materias.",
-      "Genera las FAQs de una materia a partir de archivos locales.",
+      "Inicializa una biblioteca de estudio con materias y fuentes locales.",
+      "Genera FAQs de una materia de UTN FRT a partir de los materiales cargados.",
+      "Responde preguntas usando únicamente las fuentes disponibles.",
       "Compacta una materia y exporta el apunte final en PDF."
     ],
     "brandColor": "#2859C5"
