@@ -1,0 +1,44 @@
+name: Go tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Static analysis
+        run: go vet ./...
+
+      - name: Run tests with transient retry
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            echo "Test attempt ${attempt}/3"
+            if go test ./... -v -race; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep 10
+            fi
+          done
+          exit 1
+
+      - name: Build CLI
+        run: go build ./cmd/apuntes
