@@ -93,7 +93,7 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 		q, _ := args["query"].(string)
 		sub, _ := args["subject"].(string)
 		if name == "buscar_ejercicios" {
-			q += " ejercicio práctica"
+			q += " ejercicios prácticos"
 		}
 		r, e := a.search(q, 10, sub)
 		if e != nil {
@@ -131,7 +131,7 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 		if e != nil {
 			return fail(e.Error())
 		}
-		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(map[string]any{"steps": []string{"Conceptos base", "Aplicación guiada", "Ejercicios"}, "sources": r})}}})
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(map[string]any{"steps": []string{"Máscaras y notación CIDR", "Cálculo de subredes", "Ejercicios prácticos"}, "sources": r})}}})
 	default:
 		return fail("herramienta no soportada: " + name)
 	}
