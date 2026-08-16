@@ -4,8 +4,6 @@ on:
   pull_request:
   push:
     branches: [main]
-  schedule:
-    - cron: "0 9 * * *"
   workflow_dispatch:
 
 permissions:
@@ -25,12 +23,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Static analysis
+        run: go vet ./...
+
       - name: Run tests with transient retry
         shell: bash
         run: |
           for attempt in 1 2 3; do
             echo "Test attempt ${attempt}/3"
-            if go test ./... -v; then
+            if go test ./... -v -race; then
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
