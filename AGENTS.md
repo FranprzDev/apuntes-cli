@@ -5,6 +5,8 @@
 - Keep study content grounded in the source files provided by the user.
 - Do not invent facts, citations, or academic references.
 - Preserve the separation between subjects, sources, FAQs, and generated outputs.
+- Study materials in `materiales/` are intentionally published: the owner shares
+  his notes publicly. Never add new private-material exclusions for `materiales/`.
 
 ## Workflow: stacked PRs
 
