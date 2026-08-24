@@ -2,7 +2,6 @@ package app
 
 import (
 	"bufio"
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -10,7 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
+	"sort"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -64,7 +63,22 @@ func (a *App) Close() {
 }
 func (a *App) ingest(path string) (int, error) {
 	n := 0
-	info, err := os.Stat(path)
+	materiales := filepath.Join(a.Root, "materiales")
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return 0, err
+	}
+	check := abs
+	if resolved, e := filepath.EvalSymlinks(abs); e == nil {
+		check = resolved
+	}
+	if resolved, e := filepath.EvalSymlinks(materiales); e == nil {
+		materiales = resolved
+	}
+	if !safePath(materiales, check) {
+		return 0, fmt.Errorf("la ruta %s está fuera de materiales/", path)
+	}
+	info, err := os.Stat(abs)
 	if err != nil {
 		return 0, err
 	}
@@ -76,9 +90,18 @@ func (a *App) ingest(path string) (int, error) {
 		if ext != ".md" && ext != ".txt" && ext != ".pdf" {
 			return nil
 		}
+		target := p
+		if resolved, e := filepath.EvalSymlinks(p); e == nil {
+			target = resolved
+		} else if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if !safePath(materiales, target) {
+			return fmt.Errorf("la ruta %s apunta fuera de materiales/", p)
+		}
 		b, err := readFile(p, ext)
 		if err != nil {
-			return err
+			return nil
 		}
 		absolute, _ := filepath.Abs(p)
 		rel, _ := filepath.Rel(a.Root, absolute)
@@ -91,7 +114,7 @@ func (a *App) ingest(path string) (int, error) {
 		return nil
 	}
 	if info.IsDir() {
-		err = filepath.WalkDir(path, func(p string, d os.DirEntry, e error) error {
+		err = filepath.WalkDir(abs, func(p string, d os.DirEntry, e error) error {
 			if e != nil {
 				return e
 			}
@@ -109,7 +132,6 @@ func (d dirEntry) Type() os.FileMode          { return d.Mode() }
 func (d dirEntry) Info() (os.FileInfo, error) { return d.FileInfo, nil }
 func (d dirEntry) Name() string               { return d.FileInfo.Name() }
 func (d dirEntry) IsDir() bool                { return d.FileInfo.IsDir() }
-func (d dirEntry) Typex() os.FileMode         { return d.FileInfo.Mode() }
 func subjectFromPath(p string) string {
 	parts := strings.Split(filepath.ToSlash(p), "/")
 	for i, x := range parts {
@@ -124,9 +146,13 @@ func readFile(p, ext string) ([]byte, error) {
 	if ext != ".pdf" || e != nil {
 		return b, e
 	}
-	return extractPDF(b), nil
+	text, ok := extractPDF(b)
+	if !ok {
+		return nil, fmt.Errorf("%s: no se pudo extraer texto del PDF", p)
+	}
+	return text, nil
 }
-func extractPDF(b []byte) []byte {
+func extractPDF(b []byte) ([]byte, bool) {
 	s := string(b)
 	var out []string
 	for _, x := range strings.Split(s, "stream")[1:] {
@@ -147,9 +173,9 @@ func extractPDF(b []byte) []byte {
 		}
 	}
 	if len(out) == 0 {
-		return []byte("PDF digital: no se pudo extraer texto automáticamente")
+		return nil, false
 	}
-	return []byte(strings.Join(out, " "))
+	return []byte(strings.Join(out, " ")), true
 }
 func (a *App) search(q string, limit int, subject string) ([]Source, error) {
 	q = ftsQuery(q)
@@ -246,9 +272,17 @@ func Run(args []string, out io.Writer, in io.Reader) error {
 	case "init":
 		return initWorkspace(a, out)
 	case "ingest":
-		p := "./materiales"
+		materiales := filepath.Join(root, "materiales")
+		p := materiales
 		if len(args) > 2 && args[1] == "--path" {
-			p = args[2]
+			abs, err := filepath.Abs(args[2])
+			if err != nil {
+				return err
+			}
+			if !safePath(materiales, abs) {
+				return fmt.Errorf("la ruta %s está fuera de materiales/", args[2])
+			}
+			p = abs
 		}
 		n, e := a.ingest(p)
 		if e == nil {
@@ -335,25 +369,75 @@ func studyPath(a *App, args []string, out io.Writer) error {
 			subj = args[i+1]
 		}
 	}
-	r, e := a.search("máscaras CIDR subredes ejercicios", 20, subj)
+	steps, sources, e := a.suggestSteps(subj)
 	if e != nil {
 		return e
 	}
-	return printJSON(out, map[string]any{"subject": subj, "steps": []string{"Máscaras y notación CIDR", "Cálculo de subredes", "Ejercicios prácticos"}, "sources": r}, nil)
-}
-func readLine(r io.Reader) (string, error) {
-	b := bufio.NewReader(r)
-	s, e := b.ReadString('\n')
-	return strings.TrimSpace(s), e
-}
-func parseInt(s string, d int) int {
-	v, e := strconv.Atoi(s)
-	if e != nil {
-		return d
-	}
-	return v
+	return printJSON(out, map[string]any{"subject": subj, "steps": steps, "sources": sources}, nil)
 }
 
-var _ = context.Background
-var _ = readLine
-var _ = parseInt
+var stopwords = map[string]bool{"de": true, "la": true, "el": true, "los": true, "las": true, "y": true, "o": true, "a": true, "en": true, "que": true, "del": true, "al": true, "con": true, "por": true, "para": true, "un": true, "una": true, "es": true, "se": true, "su": true, "lo": true, "como": true, "the": true, "of": true, "and": true, "to": true, "in": true}
+
+func (a *App) suggestSteps(subject string) ([]string, []Source, error) {
+	sources, err := a.allSources(subject)
+	if err != nil {
+		return nil, nil, err
+	}
+	freq := map[string]int{}
+	docs := map[string]int{}
+	for _, s := range sources {
+		seen := map[string]bool{}
+		for _, w := range strings.Fields(strings.ToLower(s.Title + " " + s.Text)) {
+			w = strings.Trim(w, ".,;:()¡!¿?\"'")
+			if len(w) < 4 || stopwords[w] || seen[w] {
+				continue
+			}
+			seen[w] = true
+			freq[w]++
+			docs[w]++
+		}
+	}
+	type kv struct {
+		w string
+		n int
+	}
+	var top []kv
+	for w, n := range freq {
+		top = append(top, kv{w, n})
+	}
+	sort.Slice(top, func(i, j int) bool { return top[i].n > top[j].n || (top[i].n == top[j].n && top[i].w < top[j].w) })
+	if len(top) > 6 {
+		top = top[:6]
+	}
+	var steps []string
+	for _, t := range top {
+		steps = append(steps, fmt.Sprintf("Repasar «%s» (aparece en %d fuente(s))", t.w, docs[t.w]))
+	}
+	return steps, sources, nil
+}
+
+func (a *App) allSources(subject string) ([]Source, error) {
+	q := `SELECT id,subject,title,path,location,year,topics,body FROM documents`
+	args := []any{}
+	if subject != "" {
+		q += ` WHERE subject = ?`
+		args = append(args, subject)
+	}
+	q += ` ORDER BY title LIMIT 50`
+	rows, err := a.DB.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Source
+	for rows.Next() {
+		var s Source
+		var topics string
+		if err := rows.Scan(&s.ID, &s.Subject, &s.Title, &s.Path, &s.Location, &s.Year, &topics, &s.Text); err != nil {
+			return nil, err
+		}
+		s.Topics = strings.Fields(topics)
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}

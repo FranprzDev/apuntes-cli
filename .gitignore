@@ -13,6 +13,7 @@ data/index.db
 data/profile.json
 data/progress.json
 materiales/
-!materiales/
-!materiales/redes/
-!materiales/redes/*
+
+apuntes
+*.exe
+.opencode/

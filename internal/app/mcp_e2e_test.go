@@ -35,7 +35,7 @@ func TestMCPStdioEndToEnd(t *testing.T) {
 		{name: "listar_materias", args: map[string]any{}, want: "redes"},
 		{name: "buscar_material", args: map[string]any{"query": "subnetting", "subject": "redes"}, want: "subnetting"},
 		{name: "leer_fuente", args: map[string]any{"path": "materiales/redes/subnetting.md"}, want: "Fuente:"},
-		{name: "sugerir_ruta_de_estudio", args: map[string]any{"subject": "redes"}, want: "Máscaras y notación CIDR"},
+		{name: "sugerir_ruta_de_estudio", args: map[string]any{"subject": "redes"}, want: "Repasar «cidr»"},
 		{name: "buscar_ejercicios", args: map[string]any{"query": "CIDR"}, want: "ejercicios"},
 		{name: "obtener_perfil", args: map[string]any{}, want: "UTN FRT"},
 	}

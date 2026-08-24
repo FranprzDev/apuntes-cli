@@ -117,8 +117,19 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 	case "leer_fuente":
 		p, _ := args["path"].(string)
 		full := filepath.Join(a.Root, p)
-		if !safePath(a.Root, full) {
-			return fail("ruta fuera del workspace")
+		if resolved, e := filepath.EvalSymlinks(full); e == nil {
+			full = resolved
+		}
+		materiales := filepath.Join(a.Root, "materiales")
+		if resolved, e := filepath.EvalSymlinks(materiales); e == nil {
+			materiales = resolved
+		}
+		if !safePath(materiales, full) {
+			return fail("la fuente debe estar dentro de materiales/")
+		}
+		var n int
+		if e := a.DB.QueryRow(`SELECT COUNT(*) FROM documents WHERE path = ?`, filepath.ToSlash(p)).Scan(&n); e != nil || n == 0 {
+			return fail("la fuente no está indexada: " + p)
 		}
 		b, e := os.ReadFile(full)
 		if e != nil {
@@ -127,11 +138,14 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": string(b)}, map[string]any{"type": "text", "text": "Fuente: " + p}}})
 	case "sugerir_ruta_de_estudio":
 		sub, _ := args["subject"].(string)
-		r, e := a.search("máscaras CIDR subredes ejercicios", 20, sub)
+		steps, r, e := a.suggestSteps(sub)
 		if e != nil {
 			return fail(e.Error())
 		}
-		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(map[string]any{"steps": []string{"Máscaras y notación CIDR", "Cálculo de subredes", "Ejercicios prácticos"}, "sources": r})}}})
+		if steps == nil {
+			steps = []string{}
+		}
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(map[string]any{"steps": steps, "sources": r})}}})
 	default:
 		return fail("herramienta no soportada: " + name)
 	}
@@ -146,8 +160,7 @@ func installMCP(a *App, args []string, out io.Writer) error {
 	if len(args) < 2 {
 		return fmt.Errorf("uso: mcp install --agent claude|codex")
 	}
-	agent := args[len(args)-1]
 	cfg := map[string]any{"mcpServers": map[string]any{"apuntes": map[string]any{"command": filepath.Join(a.Root, "apuntes"), "args": []string{"mcp"}}}}
-	fmt.Fprintf(out, "Configuración para %s:\n%s\n", agent, jsonString(cfg))
+	fmt.Fprintln(out, jsonString(cfg))
 	return nil
 }
