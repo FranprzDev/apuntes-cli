@@ -54,6 +54,9 @@ func tools() []tool {
 		{Name: "sugerir_ruta_de_estudio", Description: "Sugiere una secuencia basada en evidencia disponible.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"subject": map[string]any{"type": "string"}}}},
 		{Name: "buscar_ejercicios", Description: "Busca ejercicios relacionados en fuentes locales.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}}, "required": []string{"query"}}},
 		{Name: "obtener_perfil", Description: "Devuelve el perfil local del estudiante.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{}}},
+		{Name: "iniciar_clase", Description: "Abre una sesión de clase con un tema.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"tema": map[string]any{"type": "string"}}, "required": []string{"tema"}}},
+		{Name: "registrar_pregunta", Description: "Registra una pregunta (y opcionalmente su respuesta) en la sesión abierta.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"pregunta": map[string]any{"type": "string"}, "respuesta": map[string]any{"type": "string"}}, "required": []string{"pregunta"}}},
+		{Name: "cerrar_clase", Description: "Cierra la sesión de clase abierta.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{}}},
 	}
 }
 func handleRPC(a *App, r rpc) response {
@@ -89,6 +92,32 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 			return fail(e.Error())
 		}
 		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(p)}}})
+	case "iniciar_clase":
+		tema, _ := args["tema"].(string)
+		if strings.TrimSpace(tema) == "" {
+			return fail("falta el tema")
+		}
+		p, e := startSession(a.Root, tema)
+		if e != nil {
+			return fail(e.Error())
+		}
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": "sesión iniciada: " + p}}})
+	case "registrar_pregunta":
+		pregunta, _ := args["pregunta"].(string)
+		respuesta, _ := args["respuesta"].(string)
+		if strings.TrimSpace(pregunta) == "" {
+			return fail("falta la pregunta")
+		}
+		if e := addEntry(a.Root, pregunta, respuesta); e != nil {
+			return fail(e.Error())
+		}
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": "registrado"}}})
+	case "cerrar_clase":
+		p, e := endSession(a.Root)
+		if e != nil {
+			return fail(e.Error())
+		}
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": "sesión cerrada: " + p}}})
 	case "buscar_material", "buscar_ejercicios":
 		q, _ := args["query"].(string)
 		sub, _ := args["subject"].(string)
