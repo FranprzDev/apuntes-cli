@@ -271,7 +271,8 @@ Comandos:
   profile [init|edit]      Muestra o edita el perfil de estudio
   study-path [--subject X] Sugiere una ruta de estudio basada en el índice
   clase start|ask|end      Registra una clase: tema, preguntas y respuestas
-  resumen [--sesion FILE]  Genera un .md de repaso desde la última sesión
+  resumen [--sesion FILE] [--pdf]
+                           Genera un .md (y PDF opcional) de repaso
   mcp                      Sirve el servidor MCP por stdio
   help [comando]           Muestra esta ayuda o la de un comando
 `)
@@ -290,7 +291,7 @@ func commandUsage(cmd string) string {
 	case "clase":
 		return "uso: apuntes clase start <tema> | clase ask \"<pregunta>\" [--respuesta \"<texto>\"] | clase end"
 	case "resumen":
-		return "uso: apuntes resumen [--sesion <archivo.json>]"
+		return "uso: apuntes resumen [--sesion <archivo.json>] [--pdf]"
 	case "mcp":
 		return "uso: apuntes mcp | apuntes mcp install --agent claude|codex"
 	default:

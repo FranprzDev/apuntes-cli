@@ -117,16 +117,19 @@ func buildSummaryMarkdown(s *Session, keywords []string, sources []Source) strin
 
 func summaryCmd(a *App, args []string, out io.Writer) error {
 	sessionPath := ""
+	wantPDF := false
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--sesion":
 			if i+1 >= len(args) {
-				return fmt.Errorf("uso: apuntes resumen [--sesion <archivo.json>]")
+				return fmt.Errorf("uso: apuntes resumen [--sesion <archivo.json>] [--pdf]")
 			}
 			sessionPath = args[i+1]
 			i++
+		case "--pdf":
+			wantPDF = true
 		default:
-			return fmt.Errorf("uso: apuntes resumen [--sesion <archivo.json>]")
+			return fmt.Errorf("uso: apuntes resumen [--sesion <archivo.json>] [--pdf]")
 		}
 	}
 	if sessionPath == "" {
@@ -154,5 +157,12 @@ func summaryCmd(a *App, args []string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "resumen generado: %s\n", dest)
+	if wantPDF {
+		pdfPath, err := summaryToPDF(s, dest)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "pdf generado: %s\n", pdfPath)
+	}
 	return nil
 }
