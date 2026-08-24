@@ -258,10 +258,49 @@ func (a *App) saveProfile(p Profile) error {
 	return os.WriteFile(filepath.Join(a.Root, "data", "profile.json"), append(b, '\n'), 0644)
 }
 
+func usage(out io.Writer) {
+	fmt.Fprint(out, `apuntes — índice local de material de estudio
+
+Uso: apuntes <comando> [opciones]
+
+Comandos:
+  init                     Inicializa el workspace (data/, materiales/)
+  ingest [--path DIR]      Indexa materiales/ (o un subdirectorio de materiales/)
+  index                    Reconstruye el índice de texto completo
+  search <consulta>        Busca en las fuentes indexadas (salida JSON)
+  profile [init|edit]      Muestra o edita el perfil de estudio
+  study-path [--subject X] Sugiere una ruta de estudio basada en el índice
+  mcp                      Sirve el servidor MCP por stdio
+  help [comando]           Muestra esta ayuda o la de un comando
+`)
+}
+
+func commandUsage(cmd string) string {
+	switch cmd {
+	case "ingest":
+		return "uso: apuntes ingest [--path <subdirectorio de materiales/>]"
+	case "search":
+		return "uso: apuntes search <consulta>"
+	case "profile":
+		return "uso: apuntes profile [init|edit]"
+	case "study-path":
+		return "uso: apuntes study-path [--subject <materia>]"
+	case "mcp":
+		return "uso: apuntes mcp | apuntes mcp install --agent claude|codex"
+	default:
+		return "comando desconocido: " + cmd
+	}
+}
+
 func Run(args []string, out io.Writer, in io.Reader) error {
 	root, _ := os.Getwd()
-	if len(args) == 0 {
-		return errors.New("uso: apuntes init|ingest|index|search|profile|mcp|study-path")
+	if len(args) == 0 || args[0] == "help" {
+		if len(args) > 1 && args[0] == "help" {
+			fmt.Fprintln(out, commandUsage(args[1]))
+			return nil
+		}
+		usage(out)
+		return nil
 	}
 	a, e := New(root)
 	if e != nil {
@@ -270,11 +309,16 @@ func Run(args []string, out io.Writer, in io.Reader) error {
 	defer a.Close()
 	switch args[0] {
 	case "init":
+		if len(args) > 1 {
+			return errors.New(commandUsage("init") + ": este comando no acepta argumentos")
+		}
 		return initWorkspace(a, out)
 	case "ingest":
 		materiales := filepath.Join(root, "materiales")
 		p := materiales
-		if len(args) > 2 && args[1] == "--path" {
+		switch {
+		case len(args) == 1:
+		case len(args) == 3 && args[1] == "--path":
 			abs, err := filepath.Abs(args[2])
 			if err != nil {
 				return err
@@ -283,6 +327,8 @@ func Run(args []string, out io.Writer, in io.Reader) error {
 				return fmt.Errorf("la ruta %s está fuera de materiales/", args[2])
 			}
 			p = abs
+		default:
+			return errors.New(commandUsage("ingest"))
 		}
 		n, e := a.ingest(p)
 		if e == nil {
@@ -290,21 +336,44 @@ func Run(args []string, out io.Writer, in io.Reader) error {
 		}
 		return e
 	case "index":
+		if len(args) > 1 {
+			return errors.New(commandUsage("index") + ": este comando no acepta argumentos")
+		}
 		return rebuild(a, out)
 	case "search":
 		if len(args) < 2 {
-			return errors.New("falta la consulta")
+			return errors.New(commandUsage("search"))
 		}
 		r, e := a.search(strings.Join(args[1:], " "), 10, "")
 		return printJSON(out, r, e)
 	case "profile":
+		if len(args) > 2 || (len(args) == 2 && args[1] != "init" && args[1] != "edit") {
+			return errors.New(commandUsage("profile"))
+		}
 		return profileCmd(a, args[1:], in, out)
 	case "study-path":
-		return studyPath(a, args[1:], out)
+		subj := ""
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--subject":
+				if i+1 >= len(args) {
+					return errors.New(commandUsage("study-path"))
+				}
+				subj = args[i+1]
+				i++
+			default:
+				return errors.New(commandUsage("study-path"))
+			}
+		}
+		steps, sources, e := a.suggestSteps(subj)
+		if e != nil {
+			return e
+		}
+		return printJSON(out, map[string]any{"subject": subj, "steps": steps, "sources": sources}, nil)
 	case "mcp":
 		return ServeMCP(a, in, out, args[1:])
 	default:
-		return fmt.Errorf("comando desconocido: %s", args[0])
+		return fmt.Errorf("%s\n\nejecutá `apuntes help` para ver todos los comandos", commandUsage(args[0]))
 	}
 }
 func initWorkspace(a *App, out io.Writer) error {
@@ -361,19 +430,6 @@ func profileCmd(a *App, args []string, in io.Reader, out io.Writer) error {
 	}
 	p, e := a.profile()
 	return printJSON(out, p, e)
-}
-func studyPath(a *App, args []string, out io.Writer) error {
-	subj := ""
-	for i := range args {
-		if args[i] == "--subject" && i+1 < len(args) {
-			subj = args[i+1]
-		}
-	}
-	steps, sources, e := a.suggestSteps(subj)
-	if e != nil {
-		return e
-	}
-	return printJSON(out, map[string]any{"subject": subj, "steps": steps, "sources": sources}, nil)
 }
 
 var stopwords = map[string]bool{"de": true, "la": true, "el": true, "los": true, "las": true, "y": true, "o": true, "a": true, "en": true, "que": true, "del": true, "al": true, "con": true, "por": true, "para": true, "un": true, "una": true, "es": true, "se": true, "su": true, "lo": true, "como": true, "the": true, "of": true, "and": true, "to": true, "in": true}
