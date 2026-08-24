@@ -2,7 +2,10 @@ module github.com/franciscoperez/apuntes-cli
 
 go 1.22
 
-require modernc.org/sqlite v1.36.1
+require (
+	github.com/go-pdf/fpdf v0.9.0
+	modernc.org/sqlite v1.36.1
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

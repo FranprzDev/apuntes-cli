@@ -56,3 +56,32 @@ func TestSummaryWithoutSessionsFails(t *testing.T) {
 		t.Fatal("expected error with no sessions")
 	}
 }
+
+func TestSummaryPDF(t *testing.T) {
+	root := t.TempDir()
+	if _, err := startSession(root, "Subnetting"); err != nil {
+		t.Fatal(err)
+	}
+	if err := addEntry(root, "¿Qué es CIDR?", "Notación /n"); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := endSession(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := loadSession(closed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := filepath.Join(root, "resumenes", "test.md")
+	os.MkdirAll(filepath.Dir(md), 0755)
+	os.WriteFile(md, []byte("x"), 0644)
+	pdfPath, err := summaryToPDF(s, md)
+	if err != nil {
+		t.Fatalf("pdf: %v", err)
+	}
+	info, err := os.Stat(pdfPath)
+	if err != nil || info.Size() == 0 {
+		t.Fatalf("pdf inválido: %v", err)
+	}
+}
