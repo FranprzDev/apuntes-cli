@@ -118,3 +118,33 @@ Herramientas disponibles: `listar_materias`, `buscar_material`, `leer_fuente`,
 `sugerir_ruta_de_estudio`, `buscar_ejercicios` y `obtener_perfil`. El índice se
 guarda en `data/index.db`; el contenido no sale del equipo. Ollama y embeddings
 son opcionales y todavía no son necesarios para el fallback FTS.
+
+## Flujo de clase y resúmenes
+
+Registra una clase en vivo (por CLI o MCP) y genera un apunte de repaso:
+
+```bash
+./apuntes clase start "Subnetting"
+./apuntes clase ask "¿Qué es CIDR?" --respuesta "/24 = 24 bits de red"
+./apuntes clase end
+./apuntes resumen --pdf   # genera resumenes/<sesion>.md y .pdf
+```
+
+Por MCP las tools son `iniciar_clase`, `registrar_pregunta` y `cerrar_clase`:
+ideal para preguntarle a tu agente durante la clase y que todo quede registrado.
+
+## Compartir tus apuntes
+
+Este repo es público y los apuntes en `materiales/` se publican a propósito.
+Para consultar los apuntes de otro (o compartir los tuyos) no hace falta
+ningún servidor:
+
+1. Cloná este repo (o el fork con los apuntes que te interesen).
+2. Compilá e indexá:
+   ```bash
+   go build -o apuntes ./cmd/apuntes
+   ./apuntes init && ./apuntes ingest
+   ```
+3. Consultá con `./apuntes search <query>` o conectá tu agente favorito por MCP
+   (`./apuntes mcp install --agent claude|codex`). Cada persona usa su propio
+   modelo; el índice y las fuentes quedan locales.

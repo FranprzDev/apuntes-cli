@@ -1,0 +1,5 @@
+Ejercicios de Redes
+
+Calcular subredes a partir de una máscara y una notación CIDR. Indicar red,
+broadcast y hosts disponibles. Comparar el resultado con la consigna y anotar
+qué parte del procedimiento produjo dificultad.

@@ -8,11 +8,10 @@ plugins/apuntes-cli/dist/
 plugins/apuntes-cli/drafts/
 plugins/apuntes-cli/working/
 
-# Local study data and SQLite index (never publish private materials)
+# Local study data (index and profile stay local; materiales/ is published)
 data/index.db
 data/profile.json
 data/progress.json
-materiales/
 
 apuntes
 *.exe
