@@ -270,6 +270,7 @@ Comandos:
   search <consulta>        Busca en las fuentes indexadas (salida JSON)
   profile [init|edit]      Muestra o edita el perfil de estudio
   study-path [--subject X] Sugiere una ruta de estudio basada en el índice
+  clase start|ask|end      Registra una clase: tema, preguntas y respuestas
   mcp                      Sirve el servidor MCP por stdio
   help [comando]           Muestra esta ayuda o la de un comando
 `)
@@ -285,6 +286,8 @@ func commandUsage(cmd string) string {
 		return "uso: apuntes profile [init|edit]"
 	case "study-path":
 		return "uso: apuntes study-path [--subject <materia>]"
+	case "clase":
+		return "uso: apuntes clase start <tema> | clase ask \"<pregunta>\" [--respuesta \"<texto>\"] | clase end"
 	case "mcp":
 		return "uso: apuntes mcp | apuntes mcp install --agent claude|codex"
 	default:
@@ -372,6 +375,8 @@ func Run(args []string, out io.Writer, in io.Reader) error {
 		return printJSON(out, map[string]any{"subject": subj, "steps": steps, "sources": sources}, nil)
 	case "mcp":
 		return ServeMCP(a, in, out, args[1:])
+	case "clase":
+		return classCmd(a, args[1:], out)
 	default:
 		return fmt.Errorf("%s\n\nejecutá `apuntes help` para ver todos los comandos", commandUsage(args[0]))
 	}
