@@ -3,7 +3,6 @@ package app
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -48,7 +47,7 @@ func TestSafePathRejectsTraversal(t *testing.T) {
 }
 
 func TestExtractPDFDoesNotFailOnCorruptInput(t *testing.T) {
-	if !strings.Contains(string(extractPDF([]byte("not a pdf"))), "no se pudo") {
-		t.Fatal("expected safe fallback")
+	if _, ok := extractPDF([]byte("not a pdf")); ok {
+		t.Fatal("expected extraction failure on corrupt input")
 	}
 }
