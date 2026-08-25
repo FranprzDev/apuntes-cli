@@ -273,6 +273,7 @@ Comandos:
   clase start|ask|end      Registra una clase: tema, preguntas y respuestas
   resumen [--sesion FILE] [--pdf]
                            Genera un .md (y PDF opcional) de repaso
+  progreso [set T E]       Muestra o registra el progreso por tema
   mcp                      Sirve el servidor MCP por stdio
   help [comando]           Muestra esta ayuda o la de un comando
 `)
@@ -292,6 +293,8 @@ func commandUsage(cmd string) string {
 		return "uso: apuntes clase start <tema> | clase ask \"<pregunta>\" [--respuesta \"<texto>\"] | clase end"
 	case "resumen":
 		return "uso: apuntes resumen [--sesion <archivo.json>] [--pdf]"
+	case "progreso":
+		return "uso: apuntes progreso [set <tema> <pendiente|en_proceso|dominado>]"
 	case "mcp":
 		return "uso: apuntes mcp | apuntes mcp install --agent claude|codex"
 	default:
@@ -383,6 +386,8 @@ func Run(args []string, out io.Writer, in io.Reader) error {
 		return classCmd(a, args[1:], out)
 	case "resumen":
 		return summaryCmd(a, args[1:], out)
+	case "progreso":
+		return progressCmd(a, args[1:], out)
 	default:
 		return fmt.Errorf("%s\n\nejecutá `apuntes help` para ver todos los comandos", commandUsage(args[0]))
 	}

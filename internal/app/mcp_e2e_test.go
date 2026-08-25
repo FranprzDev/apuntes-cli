@@ -23,8 +23,8 @@ func TestMCPStdioEndToEnd(t *testing.T) {
 	list := callMCP(t, a, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
 	result := list["result"].(map[string]any)
 	tools, ok := result["tools"].([]any)
-	if !ok || len(tools) != 9 {
-		t.Fatalf("expected nine MCP tools, got %#v", result["tools"])
+	if !ok || len(tools) != 11 {
+		t.Fatalf("expected eleven MCP tools, got %#v", result["tools"])
 	}
 
 	cases := []struct {
@@ -42,6 +42,8 @@ func TestMCPStdioEndToEnd(t *testing.T) {
 		{name: "registrar_pregunta", args: map[string]any{"pregunta": "¿Qué es CIDR?", "respuesta": "/24 = 24 bits de red"}, want: "registrado"},
 		{name: "registrar_pregunta", args: map[string]any{"pregunta": "¿Cómo calculo hosts?"}, want: "registrado"},
 		{name: "cerrar_clase", args: map[string]any{}, want: "sesión cerrada"},
+		{name: "guardar_progreso", args: map[string]any{"tema": "CIDR", "estado": "dominado"}, want: "dominado"},
+		{name: "resumir_historial", args: map[string]any{}, want: "CIDR"},
 	}
 	for i, tc := range cases {
 		params, _ := json.Marshal(map[string]any{"name": tc.name, "arguments": tc.args})
