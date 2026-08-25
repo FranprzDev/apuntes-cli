@@ -48,7 +48,7 @@ func relatedSources(a *App, keywords []string) []Source {
 	seen := map[int64]bool{}
 	var out []Source
 	for _, k := range keywords {
-		rs, err := a.search(k, 3, "")
+		rs, err := a.search(k, 3, nil)
 		if err != nil {
 			continue
 		}

@@ -177,16 +177,30 @@ func extractPDF(b []byte) ([]byte, bool) {
 	}
 	return []byte(strings.Join(out, " ")), true
 }
-func (a *App) search(q string, limit int, subject string) ([]Source, error) {
+
+// activeSubjects returns the profile's active subjects; empty means no filter.
+func (a *App) activeSubjects() []string {
+	p, err := a.profile()
+	if err != nil || len(p.ActiveSubjects) == 0 {
+		return nil
+	}
+	return p.ActiveSubjects
+}
+
+func (a *App) search(q string, limit int, subjects []string) ([]Source, error) {
 	q = ftsQuery(q)
 	if q == "" {
 		return nil, nil
 	}
 	args := []any{q}
 	extra := ""
-	if subject != "" {
-		extra = " AND d.subject = ?"
-		args = append(args, subject)
+	if len(subjects) > 0 {
+		ph := make([]string, len(subjects))
+		for i, s := range subjects {
+			ph[i] = "?"
+			args = append(args, s)
+		}
+		extra = " AND d.subject IN (" + strings.Join(ph, ",") + ")"
 	}
 	args = append(args, limit)
 	rows, err := a.DB.Query(`SELECT d.id,d.subject,d.title,d.path,d.location,d.year,d.topics,d.body FROM documents_fts f JOIN documents d ON d.id=f.rowid WHERE documents_fts MATCH ?`+extra+` ORDER BY bm25(documents_fts) LIMIT ?`, args...)
@@ -354,7 +368,8 @@ func Run(args []string, out io.Writer, in io.Reader) error {
 		if len(args) < 2 {
 			return errors.New(commandUsage("search"))
 		}
-		r, e := a.search(strings.Join(args[1:], " "), 10, "")
+		query := strings.Join(args[1:], " ")
+		r, e := a.search(query, 10, a.activeSubjects())
 		return printJSON(out, r, e)
 	case "profile":
 		if len(args) > 2 || (len(args) == 2 && args[1] != "init" && args[1] != "edit") {
@@ -494,6 +509,11 @@ func (a *App) allSources(subject string) ([]Source, error) {
 	if subject != "" {
 		q += ` WHERE subject = ?`
 		args = append(args, subject)
+	} else if active := a.activeSubjects(); len(active) > 0 {
+		q += ` WHERE subject IN (` + strings.TrimSuffix(strings.Repeat("?,", len(active)), ",") + `)`
+		for _, s := range active {
+			args = append(args, s)
+		}
 	}
 	q += ` ORDER BY title LIMIT 50`
 	rows, err := a.DB.Query(q, args...)

@@ -151,7 +151,13 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 		if name == "buscar_ejercicios" {
 			q += " ejercicios prácticos"
 		}
-		r, e := a.search(q, 10, sub)
+		subjects := []string{}
+		if sub != "" {
+			subjects = []string{sub}
+		} else {
+			subjects = a.activeSubjects()
+		}
+		r, e := a.search(q, 10, subjects)
 		if e != nil {
 			return fail(e.Error())
 		}
