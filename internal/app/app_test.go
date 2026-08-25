@@ -30,7 +30,7 @@ func TestIngestAndSearchKeepsRelativeSource(t *testing.T) {
 	if n, err := a.ingest(filepath.Join(root, "materiales")); err != nil || n != 1 {
 		t.Fatalf("ingest: n=%d err=%v", n, err)
 	}
-	results, err := a.search("subnetting", 5, "redes")
+	results, err := a.search("subnetting", 5, []string{"redes"})
 	if err != nil {
 		t.Fatal(err)
 	}
