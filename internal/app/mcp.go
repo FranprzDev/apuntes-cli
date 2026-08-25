@@ -57,6 +57,8 @@ func tools() []tool {
 		{Name: "iniciar_clase", Description: "Abre una sesión de clase con un tema.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"tema": map[string]any{"type": "string"}}, "required": []string{"tema"}}},
 		{Name: "registrar_pregunta", Description: "Registra una pregunta (y opcionalmente su respuesta) en la sesión abierta.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"pregunta": map[string]any{"type": "string"}, "respuesta": map[string]any{"type": "string"}}, "required": []string{"pregunta"}}},
 		{Name: "cerrar_clase", Description: "Cierra la sesión de clase abierta.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{}}},
+		{Name: "guardar_progreso", Description: "Registra el estado de estudio de un tema.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"tema": map[string]any{"type": "string"}, "estado": map[string]any{"type": "string", "enum": []string{"pendiente", "en_proceso", "dominado"}}}, "required": []string{"tema", "estado"}}},
+		{Name: "resumir_historial", Description: "Devuelve el progreso por tema ordenado por prioridad.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{}}},
 	}
 }
 func handleRPC(a *App, r rpc) response {
@@ -112,6 +114,31 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 			return fail(e.Error())
 		}
 		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": "registrado"}}})
+	case "guardar_progreso":
+		tema, _ := args["tema"].(string)
+		estado, _ := args["estado"].(string)
+		if estado == "" {
+			estado = "en_proceso"
+		}
+		t, e := setProgress(a.Root, tema, estado)
+		if e != nil {
+			return fail(e.Error())
+		}
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(t)}}})
+	case "resumir_historial":
+		type row struct {
+			Topic    string        `json:"tema"`
+			Progress TopicProgress `json:"progreso"`
+		}
+		rows, e := historySummary(a.Root)
+		if e != nil {
+			return fail(e.Error())
+		}
+		out := make([]row, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, row{r.Topic, r.Progress})
+		}
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(out)}}})
 	case "cerrar_clase":
 		p, e := endSession(a.Root)
 		if e != nil {
