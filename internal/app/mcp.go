@@ -59,6 +59,7 @@ func tools() []tool {
 		{Name: "cerrar_clase", Description: "Cierra la sesión de clase abierta.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{}}},
 		{Name: "guardar_progreso", Description: "Registra el estado de estudio de un tema.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"tema": map[string]any{"type": "string"}, "estado": map[string]any{"type": "string", "enum": []string{"pendiente", "en_proceso", "dominado"}}}, "required": []string{"tema", "estado"}}},
 		{Name: "resumir_historial", Description: "Devuelve el progreso por tema ordenado por prioridad.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{}}},
+		{Name: "generar_resumen", Description: "Genera el resumen .md (y PDF opcional) de la última sesión cerrada.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"sesion": map[string]any{"type": "string"}, "pdf": map[string]any{"type": "boolean"}}}},
 	}
 }
 func handleRPC(a *App, r rpc) response {
@@ -139,6 +140,18 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 			out = append(out, row{r.Topic, r.Progress})
 		}
 		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(out)}}})
+	case "generar_resumen":
+		sesion, _ := args["sesion"].(string)
+		wantPDF, _ := args["pdf"].(bool)
+		mdPath, pdfPath, e := generateSummary(a, sesion, wantPDF)
+		if e != nil {
+			return fail(e.Error())
+		}
+		payload := map[string]any{"markdown": mdPath}
+		if pdfPath != "" {
+			payload["pdf"] = pdfPath
+		}
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(payload)}}})
 	case "cerrar_clase":
 		p, e := endSession(a.Root)
 		if e != nil {

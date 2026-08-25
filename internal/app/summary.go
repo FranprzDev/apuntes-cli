@@ -115,6 +115,42 @@ func buildSummaryMarkdown(s *Session, keywords []string, sources []Source) strin
 	return b.String()
 }
 
+// generateSummary builds the markdown (and optional PDF) for a session and
+// writes it under resumenes/. It returns the markdown path and PDF path.
+func generateSummary(a *App, sessionPath string, wantPDF bool) (string, string, error) {
+	if sessionPath == "" {
+		p, _, err := latestClosedSession(a.Root)
+		if err != nil {
+			return "", "", err
+		}
+		sessionPath = p
+	}
+	s, err := loadSession(sessionPath)
+	if err != nil {
+		return "", "", err
+	}
+	keywords := summaryKeywords(s, 6)
+	md := buildSummaryMarkdown(s, keywords, relatedSources(a, keywords))
+
+	destDir := filepath.Join(a.Root, "resumenes")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return "", "", err
+	}
+	name := strings.TrimSuffix(filepath.Base(sessionPath), filepath.Ext(sessionPath)) + ".md"
+	dest := filepath.Join(destDir, name)
+	if err := os.WriteFile(dest, []byte(md), 0644); err != nil {
+		return "", "", err
+	}
+	pdfPath := ""
+	if wantPDF {
+		pdfPath, err = summaryToPDF(s, dest)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	return dest, pdfPath, nil
+}
+
 func summaryCmd(a *App, args []string, out io.Writer) error {
 	sessionPath := ""
 	wantPDF := false
@@ -132,36 +168,12 @@ func summaryCmd(a *App, args []string, out io.Writer) error {
 			return fmt.Errorf("uso: apuntes resumen [--sesion <archivo.json>] [--pdf]")
 		}
 	}
-	if sessionPath == "" {
-		p, _, err := latestClosedSession(a.Root)
-		if err != nil {
-			return err
-		}
-		sessionPath = p
-	}
-	s, err := loadSession(sessionPath)
+	dest, pdfPath, err := generateSummary(a, sessionPath, wantPDF)
 	if err != nil {
 		return err
 	}
-	keywords := summaryKeywords(s, 6)
-	md := buildSummaryMarkdown(s, keywords, relatedSources(a, keywords))
-
-	destDir := filepath.Join(a.Root, "resumenes")
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return err
-	}
-	name := filepath.Base(sessionPath)
-	name = strings.TrimSuffix(name, filepath.Ext(name)) + ".md"
-	dest := filepath.Join(destDir, name)
-	if err := os.WriteFile(dest, []byte(md), 0644); err != nil {
-		return err
-	}
 	fmt.Fprintf(out, "resumen generado: %s\n", dest)
-	if wantPDF {
-		pdfPath, err := summaryToPDF(s, dest)
-		if err != nil {
-			return err
-		}
+	if pdfPath != "" {
 		fmt.Fprintf(out, "pdf generado: %s\n", pdfPath)
 	}
 	return nil
