@@ -1,4 +1,4 @@
-package app
+package summary
 
 import (
 	"fmt"
@@ -7,17 +7,20 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/franciscoperez/apuntes-cli/internal/core"
+	"github.com/franciscoperez/apuntes-cli/internal/session"
 )
 
-// summaryKeywords extracts the most frequent significant terms from the
+// keywords extracts the most frequent significant terms from the
 // session's own Q&A content, so every part of the generated document is
 // grounded in what actually happened during the class.
-func summaryKeywords(s *Session, n int) []string {
+func keywords(s *session.Session, n int) []string {
 	freq := map[string]int{}
 	for _, e := range s.Entries {
 		for _, w := range strings.Fields(strings.ToLower(e.Question + " " + e.Answer)) {
 			w = strings.Trim(w, ".,;:()¡!¿?\"'«»")
-			if len(w) < 4 || stopwords[w] {
+			if len(w) < 4 || core.Stopwords[w] {
 				continue
 			}
 			freq[w]++
@@ -44,11 +47,11 @@ func summaryKeywords(s *Session, n int) []string {
 	return out
 }
 
-func relatedSources(a *App, keywords []string) []Source {
+func relatedSources(a *core.App, kws []string) []core.Source {
 	seen := map[int64]bool{}
-	var out []Source
-	for _, k := range keywords {
-		rs, err := a.search(k, 3, nil)
+	var out []core.Source
+	for _, k := range kws {
+		rs, err := a.Search(k, 3, nil)
 		if err != nil {
 			continue
 		}
@@ -66,14 +69,14 @@ func relatedSources(a *App, keywords []string) []Source {
 	return out
 }
 
-func buildSummaryMarkdown(s *Session, keywords []string, sources []Source) string {
+func buildMarkdown(s *session.Session, kws []string, sources []core.Source) string {
 	var b strings.Builder
 	b.WriteString("# Resumen de clase: " + s.Topic + "\n\n")
 	fmt.Fprintf(&b, "- **Inicio:** %s\n- **Fin:** %s\n- **Preguntas registradas:** %d\n\n", s.Start, s.End, len(s.Entries))
 
 	b.WriteString("## Brief\n\n")
-	if len(keywords) > 0 {
-		b.WriteString("Conceptos centrales trabajados en la sesión: " + strings.Join(keywords, ", ") + ".\n\n")
+	if len(kws) > 0 {
+		b.WriteString("Conceptos centrales trabajados en la sesión: " + strings.Join(kws, ", ") + ".\n\n")
 	} else {
 		b.WriteString("La sesión no registró preguntas.\n\n")
 	}
@@ -115,22 +118,22 @@ func buildSummaryMarkdown(s *Session, keywords []string, sources []Source) strin
 	return b.String()
 }
 
-// generateSummary builds the markdown (and optional PDF) for a session and
+// Generate builds the markdown (and optional PDF) for a session and
 // writes it under resumenes/. It returns the markdown path and PDF path.
-func generateSummary(a *App, sessionPath string, wantPDF bool) (string, string, error) {
+func Generate(a *core.App, sessionPath string, wantPDF bool) (string, string, error) {
 	if sessionPath == "" {
-		p, _, err := latestClosedSession(a.Root)
+		p, _, err := session.LatestClosed(a.Root)
 		if err != nil {
 			return "", "", err
 		}
 		sessionPath = p
 	}
-	s, err := loadSession(sessionPath)
+	s, err := session.LoadSession(sessionPath)
 	if err != nil {
 		return "", "", err
 	}
-	keywords := summaryKeywords(s, 6)
-	md := buildSummaryMarkdown(s, keywords, relatedSources(a, keywords))
+	kws := keywords(s, 6)
+	md := buildMarkdown(s, kws, relatedSources(a, kws))
 
 	destDir := filepath.Join(a.Root, "resumenes")
 	if err := os.MkdirAll(destDir, 0755); err != nil {
@@ -143,7 +146,7 @@ func generateSummary(a *App, sessionPath string, wantPDF bool) (string, string, 
 	}
 	pdfPath := ""
 	if wantPDF {
-		pdfPath, err = summaryToPDF(s, dest)
+		pdfPath, err = ToPDF(s, dest)
 		if err != nil {
 			return "", "", err
 		}
@@ -151,7 +154,7 @@ func generateSummary(a *App, sessionPath string, wantPDF bool) (string, string, 
 	return dest, pdfPath, nil
 }
 
-func summaryCmd(a *App, args []string, out io.Writer) error {
+func Cmd(a *core.App, args []string, out io.Writer) error {
 	sessionPath := ""
 	wantPDF := false
 	for i := 0; i < len(args); i++ {
@@ -168,7 +171,7 @@ func summaryCmd(a *App, args []string, out io.Writer) error {
 			return fmt.Errorf("uso: apuntes resumen [--sesion <archivo.json>] [--pdf]")
 		}
 	}
-	dest, pdfPath, err := generateSummary(a, sessionPath, wantPDF)
+	dest, pdfPath, err := Generate(a, sessionPath, wantPDF)
 	if err != nil {
 		return err
 	}

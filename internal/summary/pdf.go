@@ -1,15 +1,16 @@
-package app
+package summary
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/franciscoperez/apuntes-cli/internal/session"
 	"github.com/go-pdf/fpdf"
 )
 
-// summaryToPDF renders the session summary into a simple PDF next to the
+// ToPDF renders the session summary into a simple PDF next to the
 // markdown file, and returns the PDF path.
-func summaryToPDF(s *Session, mdPath string) (string, error) {
+func ToPDF(s *session.Session, mdPath string) (string, error) {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	tr := pdf.UnicodeTranslatorFromDescriptor("")
 	pdf.SetAutoPageBreak(true, 20)

@@ -1,4 +1,4 @@
-package app
+package core
 
 import (
 	"os"
@@ -27,10 +27,10 @@ func TestIngestAndSearchKeepsRelativeSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	if n, err := a.ingest(filepath.Join(root, "materiales")); err != nil || n != 1 {
+	if n, err := a.Ingest(filepath.Join(root, "materiales")); err != nil || n != 1 {
 		t.Fatalf("ingest: n=%d err=%v", n, err)
 	}
-	results, err := a.search("subnetting", 5, []string{"redes"})
+	results, err := a.Search("subnetting", 5, []string{"redes"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestIngestAndSearchKeepsRelativeSource(t *testing.T) {
 
 func TestSafePathRejectsTraversal(t *testing.T) {
 	root := t.TempDir()
-	if safePath(root, filepath.Join(root, "..", "secret.txt")) {
+	if SafePath(root, filepath.Join(root, "..", "secret.txt")) {
 		t.Fatal("traversal accepted")
 	}
 }
