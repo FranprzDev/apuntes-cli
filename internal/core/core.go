@@ -1,12 +1,9 @@
-package app
+package core
 
 import (
-	"bufio"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -61,7 +58,15 @@ func (a *App) Close() {
 		a.DB.Close()
 	}
 }
-func (a *App) ingest(path string) (int, error) {
+
+// DocCount returns how many sources are currently indexed.
+func (a *App) DocCount() (int, error) {
+	var n int
+	err := a.DB.QueryRow(`SELECT COUNT(*) FROM documents`).Scan(&n)
+	return n, err
+}
+
+func (a *App) Ingest(path string) (int, error) {
 	n := 0
 	materiales := filepath.Join(a.Root, "materiales")
 	abs, err := filepath.Abs(path)
@@ -75,7 +80,7 @@ func (a *App) ingest(path string) (int, error) {
 	if resolved, e := filepath.EvalSymlinks(materiales); e == nil {
 		materiales = resolved
 	}
-	if !safePath(materiales, check) {
+	if !SafePath(materiales, check) {
 		return 0, fmt.Errorf("la ruta %s está fuera de materiales/", path)
 	}
 	info, err := os.Stat(abs)
@@ -96,7 +101,7 @@ func (a *App) ingest(path string) (int, error) {
 		} else if d.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
-		if !safePath(materiales, target) {
+		if !SafePath(materiales, target) {
 			return fmt.Errorf("la ruta %s apunta fuera de materiales/", p)
 		}
 		b, err := readFile(p, ext)
@@ -178,16 +183,16 @@ func extractPDF(b []byte) ([]byte, bool) {
 	return []byte(strings.Join(out, " ")), true
 }
 
-// activeSubjects returns the profile's active subjects; empty means no filter.
-func (a *App) activeSubjects() []string {
-	p, err := a.profile()
+// ActiveSubjects returns the profile's active subjects; empty means no filter.
+func (a *App) ActiveSubjects() []string {
+	p, err := a.GetProfile()
 	if err != nil || len(p.ActiveSubjects) == 0 {
 		return nil
 	}
 	return p.ActiveSubjects
 }
 
-func (a *App) search(q string, limit int, subjects []string) ([]Source, error) {
+func (a *App) Search(q string, limit int, subjects []string) ([]Source, error) {
 	q = ftsQuery(q)
 	if q == "" {
 		return nil, nil
@@ -255,7 +260,7 @@ func snippet(s, q string) string {
 	}
 	return s[start:end]
 }
-func (a *App) profile() (Profile, error) {
+func (a *App) GetProfile() (Profile, error) {
 	var p Profile
 	b, e := os.ReadFile(filepath.Join(a.Root, "data", "profile.json"))
 	if os.IsNotExist(e) {
@@ -267,206 +272,15 @@ func (a *App) profile() (Profile, error) {
 	e = json.Unmarshal(b, &p)
 	return p, e
 }
-func (a *App) saveProfile(p Profile) error {
+func (a *App) SaveProfile(p Profile) error {
 	b, _ := json.MarshalIndent(p, "", "  ")
 	return os.WriteFile(filepath.Join(a.Root, "data", "profile.json"), append(b, '\n'), 0644)
 }
 
-func usage(out io.Writer) {
-	fmt.Fprint(out, `apuntes — índice local de material de estudio
+var Stopwords = map[string]bool{"de": true, "la": true, "el": true, "los": true, "las": true, "y": true, "o": true, "a": true, "en": true, "que": true, "del": true, "al": true, "con": true, "por": true, "para": true, "un": true, "una": true, "es": true, "se": true, "su": true, "lo": true, "como": true, "the": true, "of": true, "and": true, "to": true, "in": true}
 
-Uso: apuntes <comando> [opciones]
-
-Comandos:
-  init                     Inicializa el workspace (data/, materiales/)
-  ingest [--path DIR]      Indexa materiales/ (o un subdirectorio de materiales/)
-  index                    Reconstruye el índice de texto completo
-  search <consulta>        Busca en las fuentes indexadas (salida JSON)
-  profile [init|edit]      Muestra o edita el perfil de estudio
-  study-path [--subject X] Sugiere una ruta de estudio basada en el índice
-  clase start|ask|end      Registra una clase: tema, preguntas y respuestas
-  resumen [--sesion FILE] [--pdf]
-                           Genera un .md (y PDF opcional) de repaso
-  progreso [set T E]       Muestra o registra el progreso por tema
-  mcp                      Sirve el servidor MCP por stdio
-  help [comando]           Muestra esta ayuda o la de un comando
-`)
-}
-
-func commandUsage(cmd string) string {
-	switch cmd {
-	case "ingest":
-		return "uso: apuntes ingest [--path <subdirectorio de materiales/>]"
-	case "search":
-		return "uso: apuntes search <consulta>"
-	case "profile":
-		return "uso: apuntes profile [init|edit]"
-	case "study-path":
-		return "uso: apuntes study-path [--subject <materia>]"
-	case "clase":
-		return "uso: apuntes clase start <tema> | clase ask \"<pregunta>\" [--respuesta \"<texto>\"] | clase end"
-	case "resumen":
-		return "uso: apuntes resumen [--sesion <archivo.json>] [--pdf]"
-	case "progreso":
-		return "uso: apuntes progreso [set <tema> <pendiente|en_proceso|dominado>]"
-	case "mcp":
-		return "uso: apuntes mcp | apuntes mcp install --agent claude|codex"
-	default:
-		return "comando desconocido: " + cmd
-	}
-}
-
-func Run(args []string, out io.Writer, in io.Reader) error {
-	root, _ := os.Getwd()
-	if len(args) == 0 || args[0] == "help" {
-		if len(args) > 1 && args[0] == "help" {
-			fmt.Fprintln(out, commandUsage(args[1]))
-			return nil
-		}
-		usage(out)
-		return nil
-	}
-	a, e := New(root)
-	if e != nil {
-		return e
-	}
-	defer a.Close()
-	switch args[0] {
-	case "init":
-		if len(args) > 1 {
-			return errors.New(commandUsage("init") + ": este comando no acepta argumentos")
-		}
-		return initWorkspace(a, out)
-	case "ingest":
-		materiales := filepath.Join(root, "materiales")
-		p := materiales
-		switch {
-		case len(args) == 1:
-		case len(args) == 3 && args[1] == "--path":
-			abs, err := filepath.Abs(args[2])
-			if err != nil {
-				return err
-			}
-			if !safePath(materiales, abs) {
-				return fmt.Errorf("la ruta %s está fuera de materiales/", args[2])
-			}
-			p = abs
-		default:
-			return errors.New(commandUsage("ingest"))
-		}
-		n, e := a.ingest(p)
-		if e == nil {
-			fmt.Fprintf(out, "%d fuentes indexadas\n", n)
-		}
-		return e
-	case "index":
-		if len(args) > 1 {
-			return errors.New(commandUsage("index") + ": este comando no acepta argumentos")
-		}
-		return rebuild(a, out)
-	case "search":
-		if len(args) < 2 {
-			return errors.New(commandUsage("search"))
-		}
-		query := strings.Join(args[1:], " ")
-		r, e := a.search(query, 10, a.activeSubjects())
-		return printJSON(out, r, e)
-	case "profile":
-		if len(args) > 2 || (len(args) == 2 && args[1] != "init" && args[1] != "edit") {
-			return errors.New(commandUsage("profile"))
-		}
-		return profileCmd(a, args[1:], in, out)
-	case "study-path":
-		subj := ""
-		for i := 1; i < len(args); i++ {
-			switch args[i] {
-			case "--subject":
-				if i+1 >= len(args) {
-					return errors.New(commandUsage("study-path"))
-				}
-				subj = args[i+1]
-				i++
-			default:
-				return errors.New(commandUsage("study-path"))
-			}
-		}
-		steps, sources, e := a.suggestSteps(subj)
-		if e != nil {
-			return e
-		}
-		return printJSON(out, map[string]any{"subject": subj, "steps": steps, "sources": sources}, nil)
-	case "mcp":
-		return ServeMCP(a, in, out, args[1:])
-	case "clase":
-		return classCmd(a, args[1:], out)
-	case "resumen":
-		return summaryCmd(a, args[1:], out)
-	case "progreso":
-		return progressCmd(a, args[1:], out)
-	default:
-		return fmt.Errorf("%s\n\nejecutá `apuntes help` para ver todos los comandos", commandUsage(args[0]))
-	}
-}
-func initWorkspace(a *App, out io.Writer) error {
-	for _, p := range []string{"data/materias", "materiales"} {
-		if e := os.MkdirAll(filepath.Join(a.Root, p), 0755); e != nil {
-			return e
-		}
-	}
-	fmt.Fprintln(out, "workspace inicializado en data/")
-	return nil
-}
-func rebuild(a *App, out io.Writer) error {
-	_, e := a.DB.Exec(`INSERT INTO documents_fts(documents_fts) VALUES('rebuild')`)
-	if e == nil {
-		fmt.Fprintln(out, "índice reconstruido")
-	}
-	return e
-}
-func printJSON(out io.Writer, v any, e error) error {
-	if e != nil {
-		return e
-	}
-	enc := json.NewEncoder(out)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
-}
-func profileCmd(a *App, args []string, in io.Reader, out io.Writer) error {
-	if len(args) > 0 && (args[0] == "init" || args[0] == "edit") {
-		p := Profile{}
-		if args[0] == "edit" {
-			var e error
-			p, e = a.profile()
-			if e != nil {
-				return e
-			}
-		}
-		sc := bufio.NewScanner(in)
-		for _, q := range []struct {
-			k   string
-			dst *string
-		}{{"Institución", &p.Institution}, {"Carrera", &p.Career}, {"Objetivo", &p.Objective}} {
-			fmt.Fprint(out, q.k+": ")
-			sc.Scan()
-			*q.dst = sc.Text()
-		}
-		fmt.Fprint(out, "Materias activas (coma separada): ")
-		sc.Scan()
-		p.ActiveSubjects = strings.FieldsFunc(sc.Text(), func(r rune) bool { return r == ',' || r == ';' })
-		if e := a.saveProfile(p); e != nil {
-			return e
-		}
-		fmt.Fprintln(out, "perfil guardado")
-		return nil
-	}
-	p, e := a.profile()
-	return printJSON(out, p, e)
-}
-
-var stopwords = map[string]bool{"de": true, "la": true, "el": true, "los": true, "las": true, "y": true, "o": true, "a": true, "en": true, "que": true, "del": true, "al": true, "con": true, "por": true, "para": true, "un": true, "una": true, "es": true, "se": true, "su": true, "lo": true, "como": true, "the": true, "of": true, "and": true, "to": true, "in": true}
-
-func (a *App) suggestSteps(subject string) ([]string, []Source, error) {
-	sources, err := a.allSources(subject)
+func (a *App) SuggestSteps(subject string) ([]string, []Source, error) {
+	sources, err := a.AllSources(subject)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -476,7 +290,7 @@ func (a *App) suggestSteps(subject string) ([]string, []Source, error) {
 		seen := map[string]bool{}
 		for _, w := range strings.Fields(strings.ToLower(s.Title + " " + s.Text)) {
 			w = strings.Trim(w, ".,;:()¡!¿?\"'")
-			if len(w) < 4 || stopwords[w] || seen[w] {
+			if len(w) < 4 || Stopwords[w] || seen[w] {
 				continue
 			}
 			seen[w] = true
@@ -503,13 +317,13 @@ func (a *App) suggestSteps(subject string) ([]string, []Source, error) {
 	return steps, sources, nil
 }
 
-func (a *App) allSources(subject string) ([]Source, error) {
+func (a *App) AllSources(subject string) ([]Source, error) {
 	q := `SELECT id,subject,title,path,location,year,topics,body FROM documents`
 	args := []any{}
 	if subject != "" {
 		q += ` WHERE subject = ?`
 		args = append(args, subject)
-	} else if active := a.activeSubjects(); len(active) > 0 {
+	} else if active := a.ActiveSubjects(); len(active) > 0 {
 		q += ` WHERE subject IN (` + strings.TrimSuffix(strings.Repeat("?,", len(active)), ",") + `)`
 		for _, s := range active {
 			args = append(args, s)
@@ -533,3 +347,12 @@ func (a *App) allSources(subject string) ([]Source, error) {
 	}
 	return out, rows.Err()
 }
+
+// SafePath reports whether p stays inside root.
+func SafePath(root, p string) bool {
+	r, _ := filepath.Abs(root)
+	x, _ := filepath.Abs(p)
+	return x == r || strings.HasPrefix(x, r+string(os.PathSeparator))
+}
+
+func JSONString(v any) string { b, _ := json.MarshalIndent(v, "", "  "); return string(b) }

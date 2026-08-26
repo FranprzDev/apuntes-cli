@@ -1,4 +1,4 @@
-package app
+package mcp
 
 import (
 	"bufio"
@@ -8,6 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/franciscoperez/apuntes-cli/internal/core"
+	"github.com/franciscoperez/apuntes-cli/internal/progress"
+	"github.com/franciscoperez/apuntes-cli/internal/session"
+	"github.com/franciscoperez/apuntes-cli/internal/summary"
 )
 
 type rpc struct {
@@ -28,9 +33,9 @@ type tool struct {
 	InputSchema map[string]any `json:"inputSchema"`
 }
 
-func ServeMCP(a *App, in io.Reader, out io.Writer, args []string) error {
+func Serve(a *core.App, in io.Reader, out io.Writer, args []string) error {
 	if len(args) > 0 && args[0] == "install" {
-		return installMCP(a, args, out)
+		return install(a, args, out)
 	}
 	sc := bufio.NewScanner(in)
 	enc := json.NewEncoder(out)
@@ -62,7 +67,7 @@ func tools() []tool {
 		{Name: "generar_resumen", Description: "Genera el resumen .md (y PDF opcional) de la última sesión cerrada.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"sesion": map[string]any{"type": "string"}, "pdf": map[string]any{"type": "boolean"}}}},
 	}
 }
-func handleRPC(a *App, r rpc) response {
+func handleRPC(a *core.App, r rpc) response {
 	ok := func(v any) response { return response{"2.0", r.ID, v, nil} }
 	fail := func(s string) response {
 		return response{"2.0", r.ID, nil, map[string]any{"code": -32602, "message": s}}
@@ -87,20 +92,20 @@ func handleRPC(a *App, r rpc) response {
 		return fail("método no soportado: " + r.Method)
 	}
 }
-func callTool(a *App, id any, name string, args map[string]any, ok func(any) response, fail func(string) response) response {
+func callTool(a *core.App, id any, name string, args map[string]any, ok func(any) response, fail func(string) response) response {
 	switch name {
 	case "obtener_perfil":
-		p, e := a.profile()
+		p, e := a.GetProfile()
 		if e != nil {
 			return fail(e.Error())
 		}
-		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(p)}}})
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": core.JSONString(p)}}})
 	case "iniciar_clase":
 		tema, _ := args["tema"].(string)
 		if strings.TrimSpace(tema) == "" {
 			return fail("falta el tema")
 		}
-		p, e := startSession(a.Root, tema)
+		p, e := session.Start(a.Root, tema)
 		if e != nil {
 			return fail(e.Error())
 		}
@@ -111,7 +116,7 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 		if strings.TrimSpace(pregunta) == "" {
 			return fail("falta la pregunta")
 		}
-		if e := addEntry(a.Root, pregunta, respuesta); e != nil {
+		if e := session.AddEntry(a.Root, pregunta, respuesta); e != nil {
 			return fail(e.Error())
 		}
 		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": "registrado"}}})
@@ -121,17 +126,17 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 		if estado == "" {
 			estado = "en_proceso"
 		}
-		t, e := setProgress(a.Root, tema, estado)
+		t, e := progress.Set(a.Root, tema, estado)
 		if e != nil {
 			return fail(e.Error())
 		}
-		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(t)}}})
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": core.JSONString(t)}}})
 	case "resumir_historial":
 		type row struct {
-			Topic    string        `json:"tema"`
-			Progress TopicProgress `json:"progreso"`
+			Topic    string                 `json:"tema"`
+			Progress progress.TopicProgress `json:"progreso"`
 		}
-		rows, e := historySummary(a.Root)
+		rows, e := progress.History(a.Root)
 		if e != nil {
 			return fail(e.Error())
 		}
@@ -139,11 +144,11 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 		for _, r := range rows {
 			out = append(out, row{r.Topic, r.Progress})
 		}
-		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(out)}}})
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": core.JSONString(out)}}})
 	case "generar_resumen":
 		sesion, _ := args["sesion"].(string)
 		wantPDF, _ := args["pdf"].(bool)
-		mdPath, pdfPath, e := generateSummary(a, sesion, wantPDF)
+		mdPath, pdfPath, e := summary.Generate(a, sesion, wantPDF)
 		if e != nil {
 			return fail(e.Error())
 		}
@@ -151,9 +156,9 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 		if pdfPath != "" {
 			payload["pdf"] = pdfPath
 		}
-		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(payload)}}})
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": core.JSONString(payload)}}})
 	case "cerrar_clase":
-		p, e := endSession(a.Root)
+		p, e := session.End(a.Root)
 		if e != nil {
 			return fail(e.Error())
 		}
@@ -168,13 +173,13 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 		if sub != "" {
 			subjects = []string{sub}
 		} else {
-			subjects = a.activeSubjects()
+			subjects = a.ActiveSubjects()
 		}
-		r, e := a.search(q, 10, subjects)
+		r, e := a.Search(q, 10, subjects)
 		if e != nil {
 			return fail(e.Error())
 		}
-		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(r)}}})
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": core.JSONString(r)}}})
 	case "listar_materias":
 		rows, e := a.DB.Query(`SELECT subject,count(*) FROM documents GROUP BY subject ORDER BY subject`)
 		if e != nil {
@@ -188,7 +193,7 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 			rows.Scan(&s, &n)
 			vals = append(vals, map[string]any{"subject": s, "sources": n})
 		}
-		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(vals)}}})
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": core.JSONString(vals)}}})
 	case "leer_fuente":
 		p, _ := args["path"].(string)
 		full := filepath.Join(a.Root, p)
@@ -199,7 +204,7 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 		if resolved, e := filepath.EvalSymlinks(materiales); e == nil {
 			materiales = resolved
 		}
-		if !safePath(materiales, full) {
+		if !core.SafePath(materiales, full) {
 			return fail("la fuente debe estar dentro de materiales/")
 		}
 		var n int
@@ -213,29 +218,24 @@ func callTool(a *App, id any, name string, args map[string]any, ok func(any) res
 		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": string(b)}, map[string]any{"type": "text", "text": "Fuente: " + p}}})
 	case "sugerir_ruta_de_estudio":
 		sub, _ := args["subject"].(string)
-		steps, r, e := a.suggestSteps(sub)
+		steps, r, e := a.SuggestSteps(sub)
 		if e != nil {
 			return fail(e.Error())
 		}
 		if steps == nil {
 			steps = []string{}
 		}
-		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": jsonString(map[string]any{"steps": steps, "sources": r})}}})
+		return ok(map[string]any{"content": []any{map[string]any{"type": "text", "text": core.JSONString(map[string]any{"steps": steps, "sources": r})}}})
 	default:
 		return fail("herramienta no soportada: " + name)
 	}
 }
-func jsonString(v any) string { b, _ := json.MarshalIndent(v, "", "  "); return string(b) }
-func safePath(root, p string) bool {
-	r, _ := filepath.Abs(root)
-	x, _ := filepath.Abs(p)
-	return x == r || strings.HasPrefix(x, r+string(os.PathSeparator))
-}
-func installMCP(a *App, args []string, out io.Writer) error {
+
+func install(a *core.App, args []string, out io.Writer) error {
 	if len(args) < 2 {
 		return fmt.Errorf("uso: mcp install --agent claude|codex")
 	}
 	cfg := map[string]any{"mcpServers": map[string]any{"apuntes": map[string]any{"command": filepath.Join(a.Root, "apuntes"), "args": []string{"mcp"}}}}
-	fmt.Fprintln(out, jsonString(cfg))
+	fmt.Fprintln(out, core.JSONString(cfg))
 	return nil
 }

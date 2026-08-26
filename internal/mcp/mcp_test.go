@@ -1,4 +1,4 @@
-package app
+package mcp
 
 import (
 	"bytes"
@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/franciscoperez/apuntes-cli/internal/core"
 )
 
 func TestMCPStdioEndToEnd(t *testing.T) {
@@ -68,7 +71,7 @@ func TestMCPRejectsSourceTraversalEndToEnd(t *testing.T) {
 	}
 }
 
-func newMCPFixture(t *testing.T) *App {
+func newMCPFixture(t *testing.T) *core.App {
 	t.Helper()
 	root := t.TempDir()
 	source := filepath.Join(root, "materiales", "redes", "subnetting.md")
@@ -78,24 +81,24 @@ func newMCPFixture(t *testing.T) *App {
 	if err := os.WriteFile(source, []byte("# Subnetting\nMáscaras, CIDR, subredes y ejercicios prácticos."), 0644); err != nil {
 		t.Fatal(err)
 	}
-	a, err := New(root)
+	a, err := core.New(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(a.Close)
-	if _, err := a.ingest(filepath.Join(root, "materiales")); err != nil {
+	if _, err := a.Ingest(filepath.Join(root, "materiales")); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.saveProfile(Profile{Institution: "UTN FRT", Career: "Ingeniería en Sistemas", Year: 2}); err != nil {
+	if err := a.SaveProfile(core.Profile{Institution: "UTN FRT", Career: "Ingeniería en Sistemas", Year: 2}); err != nil {
 		t.Fatal(err)
 	}
 	return a
 }
 
-func callMCP(t *testing.T, a *App, request string) map[string]any {
+func callMCP(t *testing.T, a *core.App, request string) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := ServeMCP(a, bytes.NewBufferString(request+"\n"), &out, nil); err != nil {
+	if err := Serve(a, bytes.NewBufferString(request+"\n"), &out, nil); err != nil {
 		t.Fatal(err)
 	}
 	var response map[string]any
@@ -128,4 +131,41 @@ func mcpText(t *testing.T, response map[string]any) string {
 
 func containsFold(value, needle string) bool {
 	return bytes.Contains(bytes.ToLower([]byte(value)), bytes.ToLower([]byte(needle)))
+}
+
+func TestMCPSearchUsesProfileFilterEndToEnd(t *testing.T) {
+	root := t.TempDir()
+	a, err := core.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	for _, rel := range []string{"materiales/redes/subnetting.md", "materiales/quimica/tabla.md"} {
+		full := filepath.Join(a.Root, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		body := "# subnetting\nMáscaras CIDR y subredes para practicar."
+		if strings.Contains(rel, "quimica") {
+			body = "# tabla periódica\nElementos químicos y sus propiedades."
+		}
+		if err := os.WriteFile(full, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := a.Ingest(filepath.Join(a.Root, "materiales")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "data", "profile.json"), []byte(`{"institucion":"UTN","materias_activas":["quimica"]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	respRaw := callMCP(t, a, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"buscar_material","arguments":{"query":"elementos"}}}`)
+	resp := fmt.Sprintf("%v", respRaw["result"])
+	if !strings.Contains(resp, "quimica") || !strings.Contains(resp, "tabla") {
+		t.Fatalf("esperaba resultado de quimica: %s", resp)
+	}
+	if strings.Contains(resp, "subnetting") {
+		t.Fatalf("el filtro por perfil no se aplicó: %s", resp)
+	}
 }
