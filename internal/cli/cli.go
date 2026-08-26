@@ -33,6 +33,7 @@ Comandos:
   resumen [--sesion FILE] [--pdf]
                            Genera un .md (y PDF opcional) de repaso
   progreso [set T E]       Muestra o registra el progreso por tema
+  doctor                   Verifica la salud del workspace local
   mcp                      Sirve el servidor MCP por stdio
   help [comando]           Muestra esta ayuda o la de un comando
 `)
@@ -54,6 +55,8 @@ func commandUsage(cmd string) string {
 		return "uso: apuntes resumen [--sesion <archivo.json>] [--pdf]"
 	case "progreso":
 		return "uso: apuntes progreso [set <tema> <pendiente|en_proceso|dominado>]"
+	case "doctor":
+		return "uso: apuntes doctor"
 	case "mcp":
 		return "uso: apuntes mcp | apuntes mcp install --agent claude|codex"
 	default:
@@ -148,9 +151,47 @@ func Run(args []string, out io.Writer, in io.Reader) error {
 		return summary.Cmd(a, args[1:], out)
 	case "progreso":
 		return progress.Cmd(a.Root, args[1:], out)
+	case "doctor":
+		if len(args) > 1 {
+			return errors.New(commandUsage("doctor") + ": este comando no acepta argumentos")
+		}
+		return doctor(a, out)
 	default:
 		return fmt.Errorf("%s\n\nejecutá `apuntes help` para ver todos los comandos", commandUsage(args[0]))
 	}
+}
+
+// Doctor reports the health of the local workspace so problems like an empty
+// index or a missing materiales/ directory are easy to spot.
+func doctor(a *core.App, out io.Writer) error {
+	ok := true
+	check := func(name string, healthy bool, detail string) {
+		status := "ok"
+		if !healthy {
+			status = "fallo"
+			ok = false
+		}
+		fmt.Fprintf(out, "%-12s [%s] %s\n", name, status, detail)
+	}
+	materiales := filepath.Join(a.Root, "materiales")
+	_, statErr := os.Stat(materiales)
+	check("workspace", statErr == nil, materiales)
+	n, err := a.DocCount()
+	check("índice", err == nil && n > 0, fmt.Sprintf("%d documentos indexados", n))
+	if _, e := os.Stat(filepath.Join(a.Root, "data", "profile.json")); e != nil {
+		check("perfil", false, "sin perfil; crealo con `apuntes profile init`")
+	} else {
+		check("perfil", true, filepath.Join(a.Root, "data", "profile.json"))
+	}
+	if _, serr := os.Stat(session.CurrentSessionPath(a.Root)); serr == nil {
+		fmt.Fprintf(out, "%-12s [aviso] hay una sesión de clase abierta; cerrala con `apuntes clase end`\n", "clase")
+	} else {
+		fmt.Fprintf(out, "%-12s [ok] sin sesiones abiertas\n", "clase")
+	}
+	if !ok {
+		return errors.New("se encontraron problemas; ejecutá `apuntes init` o `apuntes ingest` según corresponda")
+	}
+	return nil
 }
 
 func initWorkspace(a *core.App, out io.Writer) error {
