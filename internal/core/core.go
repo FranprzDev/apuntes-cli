@@ -30,8 +30,9 @@ type Source struct {
 	Topics   []string `json:"topics"`
 }
 type App struct {
-	Root string
-	DB   *sql.DB
+	Root       string
+	DB         *sql.DB
+	embedCache any
 }
 
 func New(root string) (*App, error) {
@@ -43,16 +44,20 @@ func New(root string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &App{root, db}
+	a := &App{Root: root, DB: db}
 	if err = a.schema(); err != nil {
 		db.Close()
 	}
 	return a, err
 }
 func (a *App) schema() error {
-	_, err := a.DB.Exec(`PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, subject TEXT NOT NULL, title TEXT, path TEXT UNIQUE NOT NULL, location TEXT, year INTEGER, topics TEXT, body TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(subject,title,path,topics,body,content='documents',content_rowid='id'); CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN INSERT INTO documents_fts(rowid,subject,title,path,topics,body) VALUES (new.id,new.subject,new.title,new.path,new.topics,new.body); END; CREATE TRIGGER IF NOT EXISTS documents_ad AFTER DELETE ON documents BEGIN INSERT INTO documents_fts(documents_fts,rowid,subject,title,path,topics,body) VALUES ('delete',old.id,old.subject,old.title,old.path,old.topics,old.body); END; CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN INSERT INTO documents_fts(documents_fts,rowid,subject,title,path,topics,body) VALUES ('delete',old.id,old.subject,old.title,old.path,old.topics,old.body); INSERT INTO documents_fts(rowid,subject,title,path,topics,body) VALUES (new.id,new.subject,new.title,new.path,new.topics,new.body); END;`)
+	_, err := a.DB.Exec(`PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, subject TEXT NOT NULL, title TEXT, path TEXT UNIQUE NOT NULL, location TEXT, year INTEGER, topics TEXT, body TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(subject,title,path,topics,body,content='documents',content_rowid='id'); CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN INSERT INTO documents_fts(rowid,subject,title,path,topics,body) VALUES (new.id,new.subject,new.title,new.path,new.topics,new.body); END; CREATE TRIGGER IF NOT EXISTS documents_ad AFTER DELETE ON documents BEGIN INSERT INTO documents_fts(documents_fts,rowid,subject,title,path,topics,body) VALUES ('delete',old.id,old.subject,old.title,old.path,old.topics,old.body); END; CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN INSERT INTO documents_fts(documents_fts,rowid,subject,title,path,topics,body) VALUES ('delete',old.id,old.subject,old.title,old.path,old.topics,old.body); INSERT INTO documents_fts(rowid,subject,title,path,topics,body) VALUES (new.id,new.subject,new.title,new.path,new.topics,new.body); END; CREATE TABLE IF NOT EXISTS embeddings (path TEXT PRIMARY KEY, vec BLOB NOT NULL);`)
 	return err
 }
+
+// Embedder exposes the detected embedding provider; nil means unavailable.
+func (a *App) Embedder() Embedder { return a.embedder() }
+
 func (a *App) Close() {
 	if a.DB != nil {
 		a.DB.Close()
@@ -127,6 +132,9 @@ func (a *App) Ingest(path string) (int, error) {
 		})
 	} else {
 		err = walk(path, dirEntry{info})
+	}
+	if err == nil && n > 0 {
+		a.backfillEmbeddings()
 	}
 	return n, err
 }
@@ -224,7 +232,60 @@ func (a *App) Search(q string, limit int, subjects []string) ([]Source, error) {
 		s.Text = snippet(s.Text, q)
 		out = append(out, s)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return a.hybridRerank(q, out, subjects, limit)
+}
+
+// hybridRerank blends FTS ranking with semantic cosine similarity when an
+// embedding provider is available; otherwise it returns the FTS results as-is.
+func (a *App) hybridRerank(q string, fts []Source, subjects []string, limit int) ([]Source, error) {
+	sem := a.semanticScores(q, subjects)
+	if sem == nil {
+		return fts, nil
+	}
+	ftsBoost := map[string]float64{}
+	for i, s := range fts {
+		ftsBoost[s.Path] = 1 - float64(i)/float64(len(fts)+1)
+	}
+	rows, err := a.DB.Query(`SELECT id,subject,title,path,location,year,topics,body FROM documents`)
+	if err != nil {
+		return fts, nil
+	}
+	defer rows.Close()
+	type cand struct {
+		s     Source
+		score float64
+	}
+	var cands []cand
+	for rows.Next() {
+		var s Source
+		var topics, body string
+		if err := rows.Scan(&s.ID, &s.Subject, &s.Title, &s.Path, &s.Location, &s.Year, &topics, &body); err != nil {
+			continue
+		}
+		cos, ok := sem[s.Path]
+		if !ok {
+			continue
+		}
+		s.Topics = strings.Fields(topics)
+		s.Text = snippet(body, q)
+		score := 0.7*cos + 0.3*ftsBoost[s.Path]
+		cands = append(cands, cand{s, score})
+	}
+	if len(cands) == 0 {
+		return fts, nil
+	}
+	sort.SliceStable(cands, func(i, j int) bool { return cands[i].score > cands[j].score })
+	out := make([]Source, 0, len(cands))
+	for _, c := range cands {
+		out = append(out, c.s)
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 func ftsQuery(q string) string {
 	var parts []string
