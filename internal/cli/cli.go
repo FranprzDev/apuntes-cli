@@ -178,6 +178,13 @@ func doctor(a *core.App, out io.Writer) error {
 	check("workspace", statErr == nil, materiales)
 	n, err := a.DocCount()
 	check("índice", err == nil && n > 0, fmt.Sprintf("%d documentos indexados", n))
+	var emb int
+	a.DB.QueryRow(`SELECT COUNT(*) FROM embeddings`).Scan(&emb)
+	if a.Embedder() != nil {
+		fmt.Fprintf(out, "%-12s [ok] búsqueda semántica activa (%d/%d documentos con vector)\n", "embeddings", emb, n)
+	} else {
+		fmt.Fprintf(out, "%-12s [aviso] sin proveedor de embeddings (Ollama); se usa FTS\n", "embeddings")
+	}
 	if _, e := os.Stat(filepath.Join(a.Root, "data", "profile.json")); e != nil {
 		check("perfil", false, "sin perfil; crealo con `apuntes profile init`")
 	} else {

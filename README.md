@@ -124,3 +124,22 @@ materiales/         fuentes de estudio (publicadas a propósito)
 
 - El antiguo plugin Node (`plugins/apuntes-cli`) fue removido; toda la funcionalidad vive hoy en el binario Go.
 - El contenido de UTN FRT debe publicarse respetando la autoría, las condiciones de uso de los materiales y la privacidad de quienes compartan apuntes.
+
+## Búsqueda semántica (opcional)
+
+Si tenés [Ollama](https://ollama.com) corriendo localmente, `search` combina
+FTS con similitud de embeddings automáticamente:
+
+```bash
+ollama pull all-minilm   # ~46MB, corre 100% en tu máquina
+./apuntes ingest         # genera un vector por documento
+./apuntes doctor         # debe mostrar "búsqueda semántica activa"
+```
+
+Configuración opcional por variables de entorno:
+
+- `APUNTES_OLLAMA_URL` (default `http://127.0.0.1:11434`)
+- `APUNTES_EMBED_MODEL` (default `all-minilm`)
+
+Sin Ollama todo sigue funcionando con búsqueda full-text; los vectores se
+guardan en la misma SQLite local y nunca salen del equipo.
