@@ -1,9 +1,8 @@
-package app
+package session
 
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,11 +23,11 @@ type Session struct {
 	Entries []Entry `json:"entradas"`
 }
 
-func sessionsDir(root string) string {
+func SessionsDir(root string) string {
 	return filepath.Join(root, "data", "sessions")
 }
 
-func slugify(s string) string {
+func Slugify(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.Map(func(r rune) rune {
 		switch r {
@@ -58,11 +57,11 @@ func slugify(s string) string {
 	return strings.Trim(s, "-")
 }
 
-func currentSessionPath(root string) string {
-	return filepath.Join(sessionsDir(root), "current.json")
+func CurrentSessionPath(root string) string {
+	return filepath.Join(SessionsDir(root), "current.json")
 }
 
-func loadSession(path string) (*Session, error) {
+func LoadSession(path string) (*Session, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -75,7 +74,7 @@ func loadSession(path string) (*Session, error) {
 }
 
 func saveSession(root string, path string, s *Session) error {
-	if err := os.MkdirAll(sessionsDir(root), 0755); err != nil {
+	if err := os.MkdirAll(SessionsDir(root), 0755); err != nil {
 		return err
 	}
 	b, err := json.MarshalIndent(s, "", "  ")
@@ -85,41 +84,41 @@ func saveSession(root string, path string, s *Session) error {
 	return os.WriteFile(path, append(b, '\n'), 0644)
 }
 
-// startSession opens a new class session; fails if one is already open.
-func startSession(root, topic string) (string, error) {
-	cur := currentSessionPath(root)
+// Start opens a new class session; fails if one is already open.
+func Start(root, topic string) (string, error) {
+	cur := CurrentSessionPath(root)
 	if _, err := os.Stat(cur); err == nil {
 		return "", fmt.Errorf("ya hay una sesión abierta (%s); cerrala con `apuntes clase end`", cur)
 	}
 	now := time.Now().Format(time.RFC3339)
 	s := &Session{Topic: topic, Start: now, Entries: []Entry{}}
 	name := time.Now().Format("2006-01-02-1504")
-	if sl := slugify(topic); sl != "" {
+	if sl := Slugify(topic); sl != "" {
 		name += "-" + sl
 	}
-	path := filepath.Join(sessionsDir(root), name+".json")
+	path := filepath.Join(SessionsDir(root), name+".json")
 	if err := saveSession(root, path, s); err != nil {
 		return "", err
 	}
 	if err := saveSession(root, cur, s); err != nil {
 		return "", err
 	}
-	_ = os.WriteFile(filepath.Join(sessionsDir(root), "current.path"), []byte(filepath.Base(path)), 0644)
+	_ = os.WriteFile(filepath.Join(SessionsDir(root), "current.path"), []byte(filepath.Base(path)), 0644)
 	return path, nil
 }
 
-// addEntry appends a Q (and optional A) to the open session.
-func addEntry(root, question, answer string) error {
-	cur := currentSessionPath(root)
-	s, err := loadSession(cur)
+// AddEntry appends a Q (and optional A) to the open session.
+func AddEntry(root, question, answer string) error {
+	cur := CurrentSessionPath(root)
+	s, err := LoadSession(cur)
 	if err != nil {
 		return fmt.Errorf("no hay sesión abierta: iniciá una con `apuntes clase start <tema>`")
 	}
 	e := Entry{Time: time.Now().Format(time.RFC3339), Question: question, Answer: answer}
 	s.Entries = append(s.Entries, e)
 	path := ""
-	if b, err := os.ReadFile(filepath.Join(sessionsDir(root), "current.path")); err == nil {
-		path = filepath.Join(sessionsDir(root), strings.TrimSpace(string(b)))
+	if b, err := os.ReadFile(filepath.Join(SessionsDir(root), "current.path")); err == nil {
+		path = filepath.Join(SessionsDir(root), strings.TrimSpace(string(b)))
 	}
 	if path == "" {
 		return fmt.Errorf("archivo de sesión no encontrado")
@@ -130,17 +129,17 @@ func addEntry(root, question, answer string) error {
 	return saveSession(root, cur, s)
 }
 
-// endSession closes the open session and returns its file path.
-func endSession(root string) (string, error) {
-	cur := currentSessionPath(root)
-	s, err := loadSession(cur)
+// End closes the open session and returns its file path.
+func End(root string) (string, error) {
+	cur := CurrentSessionPath(root)
+	s, err := LoadSession(cur)
 	if err != nil {
 		return "", fmt.Errorf("no hay sesión abierta: iniciá una con `apuntes clase start <tema>`")
 	}
 	s.End = time.Now().Format(time.RFC3339)
 	path := ""
-	if b, err := os.ReadFile(filepath.Join(sessionsDir(root), "current.path")); err == nil {
-		path = filepath.Join(sessionsDir(root), strings.TrimSpace(string(b)))
+	if b, err := os.ReadFile(filepath.Join(SessionsDir(root), "current.path")); err == nil {
+		path = filepath.Join(SessionsDir(root), strings.TrimSpace(string(b)))
 	}
 	if path == "" {
 		return "", fmt.Errorf("archivo de sesión no encontrado")
@@ -149,65 +148,13 @@ func endSession(root string) (string, error) {
 		return "", err
 	}
 	os.Remove(cur)
-	os.Remove(filepath.Join(sessionsDir(root), "current.path"))
+	os.Remove(filepath.Join(SessionsDir(root), "current.path"))
 	return path, nil
 }
 
-func classCmd(a *App, args []string, out io.Writer) error {
-	if len(args) == 0 {
-		return fmt.Errorf("uso: apuntes clase start|ask|end")
-	}
-	switch args[0] {
-	case "start":
-		topic := strings.Join(args[1:], " ")
-		if topic == "" {
-			return fmt.Errorf("uso: apuntes clase start <tema>")
-		}
-		p, err := startSession(a.Root, topic)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(out, "sesión iniciada: %s\n", p)
-		return nil
-	case "ask":
-		q := strings.Join(args[1:], " ")
-		if q == "" {
-			return fmt.Errorf("uso: apuntes clase ask \"<pregunta>\" [--respuesta \"<texto>\"]")
-		}
-		answer := ""
-		if i := indexOf(args[1:], "--respuesta"); i >= 0 && i+1 < len(args[1:]) {
-			answer = args[1:][i+1]
-			q = strings.Join(args[1:][:i], " ")
-		}
-		if err := addEntry(a.Root, q, answer); err != nil {
-			return err
-		}
-		fmt.Fprintln(out, "registrado")
-		return nil
-	case "end":
-		p, err := endSession(a.Root)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(out, "sesión cerrada: %s\n", p)
-		return nil
-	default:
-		return fmt.Errorf("subcomando desconocido: %s (usá start|ask|end)", args[0])
-	}
-}
-
-func indexOf(xs []string, x string) int {
-	for i, v := range xs {
-		if v == x {
-			return i
-		}
-	}
-	return -1
-}
-
-// latestClosedSession returns the most recent closed session file.
-func latestClosedSession(root string) (string, *Session, error) {
-	matches, err := filepath.Glob(filepath.Join(sessionsDir(root), "2*.json"))
+// LatestClosed returns the most recent closed session file.
+func LatestClosed(root string) (string, *Session, error) {
+	matches, err := filepath.Glob(filepath.Join(SessionsDir(root), "2*.json"))
 	if err != nil || len(matches) == 0 {
 		return "", nil, fmt.Errorf("no hay sesiones cerradas en data/sessions/")
 	}
@@ -219,7 +166,7 @@ func latestClosedSession(root string) (string, *Session, error) {
 			newest, newestMod = m, info.ModTime()
 		}
 	}
-	s, err := loadSession(newest)
+	s, err := LoadSession(newest)
 	if err != nil {
 		return "", nil, err
 	}

@@ -1,6 +1,8 @@
 # apuntes-cli
 
-This repository contains `apuntes-cli`, a portable CLI/plugin for turning local study materials into useful, traceable study resources.
+[![CI](https://github.com/FranprzDev/apuntes-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/FranprzDev/apuntes-cli/actions/workflows/ci.yml)
+
+`apuntes-cli` es una CLI local (y servidor MCP) que convierte material de estudio en recursos trazables: índice de búsqueda, rutas de estudio, registro de clases, resúmenes y progreso.
 
 ## Product vision
 
@@ -20,8 +22,6 @@ El proyecto está diseñado para ejecutarse localmente y no tendrá un servicio 
 
 Cada persona conservará sus archivos y resultados en su propio equipo y podrá conectar la biblioteca con su propio Codex, Claude Code u otro agente compatible. Si el agente elegido utiliza un servicio pago, esa relación y ese costo pertenecen al usuario. También debería ser posible trabajar con modelos locales cuando el usuario los tenga disponibles.
 
-El repositorio será open source y debe evitar dependencias que obliguen al proyecto a mantener infraestructura propia. Los apuntes y materiales académicos tendrán una licencia o condición de uso explícita, separada de la licencia del código.
-
 ## Principios del producto
 
 - **Fuentes primero:** las respuestas y materiales deben basarse en archivos efectivamente cargados.
@@ -29,95 +29,45 @@ El repositorio será open source y debe evitar dependencias que obliguen al proy
 - **Sin invenciones:** si el material no alcanza para responder, la herramienta debe decirlo y pedir otra fuente o reformular la pregunta.
 - **Materias separadas:** cada materia mantiene su configuración, fuentes, FAQs y resultados.
 - **Uso local y compartible:** el estudiante puede trabajar con sus archivos localmente y compartir los resultados que decida publicar.
-- **Agente desacoplado:** Gentleman AI se utiliza para desarrollar y revisar el proyecto; los usuarios finales pueden utilizar Codex, Claude Code u otro agente compatible.
 
-## Experiencia esperada
+## Requisitos
 
-Un estudiante debería poder:
+- Go 1.22+ para compilar. SQLite y FTS5 se incluyen mediante `modernc.org/sqlite`, así que no necesita CGO.
+- Un agente compatible con MCP (opcional): Claude Code, Codex u otro.
 
-1. Instalar `apuntes-cli` o el plugin del agente que prefiera.
-2. Crear o seleccionar una materia de UTN FRT.
-3. Cargar PDFs, documentos, clases, ejercicios y apuntes propios.
-4. Generar FAQs y un apunte compacto en HTML/PDF.
-5. Preguntar algo como “¿cómo se aplica este concepto?” y obtener una respuesta basada en sus fuentes.
-6. Revisar las referencias antes de usar la respuesta para estudiar.
+## Instalación
 
-La primera versión se concentra en materiales locales y resultados reproducibles. Una biblioteca pública de apuntes, autenticación, colaboración entre estudiantes y búsqueda semántica quedan fuera del núcleo local y solo podrían agregarse como herramientas opcionales que el usuario ejecute o aloje por su cuenta.
-
-## What it does
-
-- Scans local source files and builds a source inventory.
-- Creates a reusable workspace with shared templates and per-subject configuration.
-- Generates a FAQ file for each subject.
-- Compacts a subject into a final HTML apunte and exports it to PDF.
-
-## Repository layout
-
-```text
-plugins/apuntes-cli/
-  .codex-plugin/plugin.json
-  package.json
-  scripts/
-  skills/
-  templates/
-```
-
-## Local workflow
-
-1. Put source files in `plugins/apuntes-cli/input/`.
-2. Run `npm install` inside `plugins/apuntes-cli/`.
-3. Install the browser once with `npx playwright install chromium`.
-4. Run `npm run init`.
-5. Run `npm run subject:create -- --subject "nombre de materia"`.
-6. Run `npm run sources`.
-7. Run `npm run faqs -- --subject "nombre de materia"`.
-8. Run `npm run compactar -- --subject "nombre de materia"`.
-9. Run `npm run export:pdf -- --subject "nombre de materia"`.
-
-You can also run the full pipeline with:
-
-```bash
-npm run full -- --subject "nombre de materia"
-```
-
-## Templates and subjects
-
-- The shared reusable base template lives in `templates/template_base.html`.
-- Subject-specific content and configuration live under `subjects/`.
-- Each subject can point to the base template or override it with its own local `template.html`.
-- FAQ output is written to `faqs/`.
-- Final compacted HTML output is written to `compactacion/`.
-
-## Notes
-
-- The old duplicated root-level templates were replaced by the shared `templates/` + `subjects/` structure.
-- El contenido de UTN FRT debe publicarse respetando la autoría, las condiciones de uso de los materiales y la privacidad de quienes compartan apuntes.
-
-## Go CLI y MCP local
-
-El MVP incluye un binario Go local. Requiere Go 1.22+ para compilar; SQLite y FTS5 se
-incluyen mediante `modernc.org/sqlite`, por lo que no necesita CGO.
+Compilá el binario:
 
 ```bash
 go build -o apuntes ./cmd/apuntes
-./apuntes init
-./apuntes ingest --path ./materiales
-./apuntes search subnetting
-./apuntes profile init
+```
+
+O instalalo directo:
+
+```bash
+go install github.com/franciscoperez/apuntes-cli/cmd/apuntes@latest
+```
+
+Las releases también publican binarios para Linux/macOS/Windows vía [goreleaser](https://goreleaser.com).
+
+## Uso básico
+
+```bash
+./apuntes init                    # crea data/ y materiales/
+./apuntes ingest                  # indexa materiales/ (md, txt y pdf)
+./apuntes search subnetting       # búsqueda full-text (salida JSON)
+./apuntes doctor                  # verifica la salud del workspace
+```
+
+Con perfil y ruta de estudio:
+
+```bash
+./apuntes profile init            # institución, carrera, materias activas
 ./apuntes study-path --subject redes
 ```
 
-El servidor MCP usa JSON-RPC por `stdio`:
-
-```bash
-./apuntes mcp
-./apuntes mcp install --agent claude
-```
-
-Herramientas disponibles: `listar_materias`, `buscar_material`, `leer_fuente`,
-`sugerir_ruta_de_estudio`, `buscar_ejercicios` y `obtener_perfil`. El índice se
-guarda en `data/index.db`; el contenido no sale del equipo. Ollama y embeddings
-son opcionales y todavía no son necesarios para el fallback FTS.
+Los filtros por materias activas del perfil se aplican automáticamente a `search` y `study-path`.
 
 ## Flujo de clase y resúmenes
 
@@ -130,8 +80,16 @@ Registra una clase en vivo (por CLI o MCP) y genera un apunte de repaso:
 ./apuntes resumen --pdf   # genera resumenes/<sesion>.md y .pdf
 ```
 
-Por MCP las tools son `iniciar_clase`, `registrar_pregunta` y `cerrar_clase`:
-ideal para preguntarle a tu agente durante la clase y que todo quede registrado.
+## Servidor MCP local
+
+El servidor MCP usa JSON-RPC por `stdio`:
+
+```bash
+./apuntes mcp
+./apuntes mcp install --agent claude   # imprime el JSON de configuración
+```
+
+Herramientas disponibles: `listar_materias`, `buscar_material`, `leer_fuente`, `sugerir_ruta_de_estudio`, `buscar_ejercicios`, `obtener_perfil`, `iniciar_clase`, `registrar_pregunta`, `cerrar_clase`, `guardar_progreso`, `resumir_historial` y `generar_resumen`. El índice se guarda en `data/index.db`; el contenido nunca sale del equipo.
 
 ## Compartir tus apuntes
 
@@ -148,3 +106,21 @@ ningún servidor:
 3. Consultá con `./apuntes search <query>` o conectá tu agente favorito por MCP
    (`./apuntes mcp install --agent claude|codex`). Cada persona usa su propio
    modelo; el índice y las fuentes quedan locales.
+
+## Estructura
+
+```text
+cmd/apuntes/        binario principal
+internal/core/      App, índice SQLite/FTS5, ingest, búsqueda, perfil
+internal/session/   sesiones de clase
+internal/progress/  progreso por tema
+internal/summary/   generación de resúmenes md/pdf
+internal/mcp/       servidor MCP (JSON-RPC stdio)
+internal/cli/       comandos y ayuda
+materiales/         fuentes de estudio (publicadas a propósito)
+```
+
+## Notas
+
+- El antiguo plugin Node (`plugins/apuntes-cli`) fue removido; toda la funcionalidad vive hoy en el binario Go.
+- El contenido de UTN FRT debe publicarse respetando la autoría, las condiciones de uso de los materiales y la privacidad de quienes compartan apuntes.

@@ -1,34 +1,37 @@
-package app
+package summary
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/franciscoperez/apuntes-cli/internal/core"
+	"github.com/franciscoperez/apuntes-cli/internal/session"
 )
 
 func TestSummaryFromClosedSession(t *testing.T) {
 	root := t.TempDir()
-	if _, err := startSession(root, "Subnetting"); err != nil {
+	if _, err := session.Start(root, "Subnetting"); err != nil {
 		t.Fatal(err)
 	}
-	if err := addEntry(root, "¿Qué es una máscara CIDR?", "Notación /n que indica bits de red"); err != nil {
+	if err := session.AddEntry(root, "¿Qué es una máscara CIDR?", "Notación /n que indica bits de red"); err != nil {
 		t.Fatal(err)
 	}
-	if err := addEntry(root, "¿Cómo calculo hosts disponibles?", ""); err != nil {
+	if err := session.AddEntry(root, "¿Cómo calculo hosts disponibles?", ""); err != nil {
 		t.Fatal(err)
 	}
-	closed, err := endSession(root)
+	closed, err := session.End(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := New(root)
+	a, err := core.New(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer a.Close()
 	var out strings.Builder
-	if err := summaryCmd(a, []string{"--sesion", closed}, &out); err != nil {
+	if err := Cmd(a, []string{"--sesion", closed}, &out); err != nil {
 		t.Fatalf("resumen: %v", err)
 	}
 	mdPath := filepath.Join(root, "resumenes", filepath.Base(strings.TrimSuffix(closed, ".json")+".md"))
@@ -46,37 +49,37 @@ func TestSummaryFromClosedSession(t *testing.T) {
 
 func TestSummaryWithoutSessionsFails(t *testing.T) {
 	root := t.TempDir()
-	a, err := New(root)
+	a, err := core.New(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer a.Close()
 	var out strings.Builder
-	if err := summaryCmd(a, nil, &out); err == nil {
+	if err := Cmd(a, nil, &out); err == nil {
 		t.Fatal("expected error with no sessions")
 	}
 }
 
 func TestSummaryPDF(t *testing.T) {
 	root := t.TempDir()
-	if _, err := startSession(root, "Subnetting"); err != nil {
+	if _, err := session.Start(root, "Subnetting"); err != nil {
 		t.Fatal(err)
 	}
-	if err := addEntry(root, "¿Qué es CIDR?", "Notación /n"); err != nil {
+	if err := session.AddEntry(root, "¿Qué es CIDR?", "Notación /n"); err != nil {
 		t.Fatal(err)
 	}
-	closed, err := endSession(root)
+	closed, err := session.End(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := loadSession(closed)
+	s, err := session.LoadSession(closed)
 	if err != nil {
 		t.Fatal(err)
 	}
 	md := filepath.Join(root, "resumenes", "test.md")
 	os.MkdirAll(filepath.Dir(md), 0755)
 	os.WriteFile(md, []byte("x"), 0644)
-	pdfPath, err := summaryToPDF(s, md)
+	pdfPath, err := ToPDF(s, md)
 	if err != nil {
 		t.Fatalf("pdf: %v", err)
 	}
