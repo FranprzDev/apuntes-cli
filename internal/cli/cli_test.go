@@ -189,3 +189,59 @@ func TestRunRootFromForeignCwd(t *testing.T) {
 		t.Logf("doctor after ingest: %v", err)
 	}
 }
+
+// TestRunIngestRelativePathFromForeignCwd checks that a relative --path is
+// resolved against the selected root, not the process cwd, so
+// `--root <repo> --path materiales/<dir>` works when launched elsewhere.
+func TestRunIngestRelativePathFromForeignCwd(t *testing.T) {
+	repo, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := filepath.Join(repo, "materiales", "redes")
+	if info, err := os.Stat(fixture); err != nil || !info.IsDir() {
+		t.Skipf("fixture %s no disponible: %v", fixture, err)
+	}
+	elsewhere := t.TempDir()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(elsewhere); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(wd) })
+
+	var out strings.Builder
+	args := []string{"--root", repo, "ingest", "--path", filepath.Join("materiales", "redes")}
+	if err := Run(args, &out, strings.NewReader("")); err != nil {
+		t.Fatalf("ingest --path relativo: %v (%s)", err, out.String())
+	}
+	if !strings.Contains(out.String(), "fuentes indexadas") {
+		t.Fatalf("ingest output: %q", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(elsewhere, "materiales")); !os.IsNotExist(err) {
+		t.Fatalf("ingest must not resolve --path against the foreign cwd")
+	}
+}
+
+// TestRunIngestAbsolutePathStillWorks keeps backward compatibility for
+// absolute --path values while --root points elsewhere.
+func TestRunIngestAbsolutePathStillWorks(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "materiales", "redes", "subnetting.md")
+	if err := os.MkdirAll(filepath.Dir(src), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, []byte("# Subnetting\nCIDR."), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	args := []string{"--root", root, "ingest", "--path", filepath.Join(root, "materiales", "redes")}
+	if err := Run(args, &out, strings.NewReader("")); err != nil {
+		t.Fatalf("ingest --path absoluto: %v (%s)", err, out.String())
+	}
+	if !strings.Contains(out.String(), "1 fuentes indexadas") {
+		t.Fatalf("ingest output: %q", out.String())
+	}
+}

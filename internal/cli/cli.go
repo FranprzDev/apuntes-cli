@@ -138,9 +138,12 @@ func Run(args []string, out io.Writer, in io.Reader) error {
 		switch {
 		case len(args) == 1:
 		case len(args) == 3 && args[1] == "--path":
-			abs, err := filepath.Abs(args[2])
-			if err != nil {
-				return err
+			// Relative --path values are resolved against the workspace root,
+			// not the process cwd, so `--root X --path materiales/...` works
+			// from anywhere. Absolute paths are kept as-is.
+			abs := args[2]
+			if !filepath.IsAbs(abs) {
+				abs = filepath.Join(root, abs)
 			}
 			if !core.SafePath(materiales, abs) {
 				return fmt.Errorf("la ruta %s está fuera de materiales/", args[2])
