@@ -37,6 +37,21 @@ func Serve(a *core.App, in io.Reader, out io.Writer, args []string) error {
 	if len(args) > 0 && args[0] == "install" {
 		return install(a, args, out)
 	}
+	addr, opts, httpMode, err := parseHTTPArgs(args)
+	if err != nil {
+		return err
+	}
+	if httpMode {
+		mode := "solo herramientas de lectura"
+		if opts.AllTools {
+			mode = "todas las herramientas, incluidas las que escriben estado local"
+		}
+		if opts.Token == "" {
+			fmt.Fprintln(out, "aviso: APUNTES_MCP_TOKEN no está definido; el endpoint queda abierto")
+		}
+		fmt.Fprintf(out, "servidor MCP por HTTP en http://%s (%s)\n", addr, mode)
+		return ServeHTTP(a, addr, opts)
+	}
 	sc := bufio.NewScanner(in)
 	enc := json.NewEncoder(out)
 	for sc.Scan() {
@@ -44,13 +59,43 @@ func Serve(a *core.App, in io.Reader, out io.Writer, args []string) error {
 		if json.Unmarshal(sc.Bytes(), &req) != nil {
 			continue
 		}
-		res := handleRPC(a, req)
+		res := handleRPC(a, req, nil)
 		if err := enc.Encode(res); err != nil {
 			return err
 		}
 	}
 	return sc.Err()
 }
+
+// parseHTTPArgs reads the optional HTTP flags of `apuntes mcp`:
+//
+//	apuntes mcp --http [addr] [--all-tools]
+//
+// addr defaults to 127.0.0.1:8080 so a bare `--http` never exposes the
+// server beyond the local machine by accident. The bearer token comes from
+// APUNTES_MCP_TOKEN, never from the command line.
+func parseHTTPArgs(args []string) (string, HTTPOptions, bool, error) {
+	addr := "127.0.0.1:8080"
+	var opts HTTPOptions
+	httpMode := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--http":
+			httpMode = true
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				addr = args[i+1]
+				i++
+			}
+		case "--all-tools":
+			opts.AllTools = true
+		default:
+			return "", opts, false, fmt.Errorf("uso: apuntes mcp | apuntes mcp --http [addr] [--all-tools] | apuntes mcp install --agent claude|codex")
+		}
+	}
+	opts.Token = os.Getenv("APUNTES_MCP_TOKEN")
+	return addr, opts, httpMode, nil
+}
+
 func tools() []tool {
 	return []tool{
 		{Name: "listar_materias", Description: "Lista las materias locales y su relevancia para el perfil.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{}}},
@@ -67,18 +112,40 @@ func tools() []tool {
 		{Name: "generar_resumen", Description: "Genera el resumen .md (y PDF opcional) de la última sesión cerrada.", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"sesion": map[string]any{"type": "string"}, "pdf": map[string]any{"type": "boolean"}}}},
 	}
 }
-func handleRPC(a *core.App, r rpc) response {
+
+// handleRPC dispatches one JSON-RPC request. allow filters which tools are
+// listed and callable; nil allows everything (stdio keeps the full set).
+func handleRPC(a *core.App, r rpc, allow func(string) bool) response {
 	ok := func(v any) response { return response{"2.0", r.ID, v, nil} }
 	fail := func(s string) response {
 		return response{"2.0", r.ID, nil, map[string]any{"code": -32602, "message": s}}
 	}
 	switch r.Method {
 	case "initialize":
-		return ok(map[string]any{"protocolVersion": "2024-11-05", "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "apuntes-cli", "version": "0.1.0"}})
+		version := "2024-11-05"
+		var params struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		if json.Unmarshal(r.Params, &params) == nil && params.ProtocolVersion != "" {
+			// The tool surface is identical across these revisions; answer
+			// with the version the client asked for.
+			version = params.ProtocolVersion
+		}
+		return ok(map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "apuntes-cli", "version": "0.1.0"}})
 	case "notifications/initialized":
 		return response{JSONRPC: "2.0"}
 	case "tools/list":
-		return ok(map[string]any{"tools": tools()})
+		available := tools()
+		if allow != nil {
+			filtered := available[:0]
+			for _, t := range available {
+				if allow(t.Name) {
+					filtered = append(filtered, t)
+				}
+			}
+			available = filtered
+		}
+		return ok(map[string]any{"tools": available})
 	case "tools/call":
 		var p struct {
 			Name      string         `json:"name"`
@@ -86,6 +153,9 @@ func handleRPC(a *core.App, r rpc) response {
 		}
 		if json.Unmarshal(r.Params, &p) != nil {
 			return fail("parámetros inválidos")
+		}
+		if allow != nil && !allow(p.Name) {
+			return fail("herramienta no disponible por este transporte: " + p.Name)
 		}
 		return callTool(a, r.ID, p.Name, p.Arguments, ok, fail)
 	default:
