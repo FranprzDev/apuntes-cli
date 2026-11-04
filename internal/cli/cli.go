@@ -35,6 +35,7 @@ Comandos:
   progreso [set T E]       Muestra o registra el progreso por tema
   doctor                   Verifica la salud del workspace local
   mcp                      Sirve el servidor MCP por stdio
+  mcp --http [addr]        Sirve MCP por HTTP (default 127.0.0.1:8080, solo lectura)
   help [comando]           Muestra esta ayuda o la de un comando
 `)
 }
@@ -58,7 +59,7 @@ func commandUsage(cmd string) string {
 	case "doctor":
 		return "uso: apuntes doctor"
 	case "mcp":
-		return "uso: apuntes mcp | apuntes mcp install --agent claude|codex"
+		return "uso: apuntes mcp | apuntes mcp --http [addr] [--all-tools] | apuntes mcp install --agent claude|codex"
 	default:
 		return "comando desconocido: " + cmd
 	}

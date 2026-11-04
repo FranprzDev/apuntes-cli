@@ -91,6 +91,57 @@ El servidor MCP usa JSON-RPC por `stdio`:
 
 Herramientas disponibles: `listar_materias`, `buscar_material`, `leer_fuente`, `sugerir_ruta_de_estudio`, `buscar_ejercicios`, `obtener_perfil`, `iniciar_clase`, `registrar_pregunta`, `cerrar_clase`, `guardar_progreso`, `resumir_historial` y `generar_resumen`. El índice se guarda en `data/index.db`; el contenido nunca sale del equipo.
 
+## Servidor MCP remoto (opcional)
+
+Además de stdio, el servidor puede exponerse por HTTP (streamable HTTP, POST
+JSON-RPC) para que otras personas conecten su agente **sin clonar el repo**:
+
+```bash
+./apuntes mcp --http 0.0.0.0:8080                              # solo lectura, abierto
+APUNTES_MCP_TOKEN=secreto ./apuntes mcp --http 0.0.0.0:8080    # con Bearer token
+./apuntes mcp --http 127.0.0.1:8080 --all-tools                # todas las tools (uso personal)
+```
+
+- Por defecto HTTP expone **solo las herramientas de lectura**
+  (`listar_materias`, `buscar_material`, `leer_fuente`,
+  `sugerir_ruta_de_estudio`, `buscar_ejercicios`): nadie escribe sesiones,
+  progreso ni resúmenes en tu equipo. `--all-tools` las habilita todas, lo
+  cual solo tiene sentido en un despliegue privado.
+- `--http` sin dirección usa `127.0.0.1:8080`; para recibir conexiones
+  externas hay que indicarlo explícitamente (p. ej. `0.0.0.0:8080`) y lo
+  recomendable es publicarlo detrás de HTTPS.
+- `APUNTES_MCP_TOKEN` agrega autenticación Bearer. Sin token el endpoint
+  queda abierto: los apuntes de `materiales/` se publican a propósito, pero
+  cualquiera que llegue al puerto puede consultarlos.
+
+### Conectar un agente al endpoint remoto
+
+Cualquier host que corra el binario sirve (una VPS, Render, Railway, etc.).
+La URL del servidor es la raíz, p. ej. `https://tu-host/`. Configuraciones
+documentadas por cada proveedor (verificadas contra sus docs, no probadas de
+punta a punta contra un despliegue):
+
+- **Claude**: `claude mcp add --transport http apuntes https://tu-host/`
+- **Codex** (`~/.codex/config.toml`):
+  ```toml
+  [mcp_servers.apuntes]
+  url = "https://tu-host/"
+  ```
+- **Gemini CLI** (`~/.gemini/settings.json`):
+  ```json
+  { "mcpServers": { "apuntes": { "httpUrl": "https://tu-host/" } } }
+  ```
+- **ChatGPT**: los conectores MCP personalizados están limitados a planes
+  Business, Enterprise y Edu según la documentación de OpenAI (revisada el
+  2026-10-30); en planes personales no hay una vía documentada para
+  conectar una URL propia.
+
+Notas de despliegue: el índice (`data/index.db`) se genera con
+`apuntes ingest` y las consultas son de solo lectura, así que un filesystem
+efímero alcanza (se reindexa en cada deploy). En planes gratuitos que
+suspenden por inactividad la primera consulta tras un rato puede demorar
+mientras la instancia despierta.
+
 ## Compartir tus apuntes
 
 Este repo es público y los apuntes en `materiales/` se publican a propósito.
