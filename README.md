@@ -37,19 +37,25 @@ Cada persona conservará sus archivos y resultados en su propio equipo y podrá 
 
 ## Instalación
 
-Compilá el binario:
+El proyecto no publica binarios ni releases descargables: se clona el repo y se compila.
 
 ```bash
+git clone https://github.com/FranprzDev/apuntes-cli.git
+cd apuntes-cli
 go build -o apuntes ./cmd/apuntes
 ```
 
-O instalalo directo:
+> `go install github.com/FranprzDev/apuntes-cli/cmd/apuntes@latest` instala solo el
+> binario. **No trae los apuntes**: los materiales viven en el repo y hay que clonarlo
+> aparte para tener el corpus.
+
+Después de compilar, inicializá e indexá el corpus incluido en el repo:
 
 ```bash
-go install github.com/FranprzDev/apuntes-cli/cmd/apuntes@latest
+./apuntes init      # crea data/ y materiales/ si faltan
+./apuntes ingest    # indexa los apuntes publicados en materiales/
+./apuntes search subnetting
 ```
-
-Las releases también publican binarios para Linux/macOS/Windows vía [goreleaser](https://goreleaser.com).
 
 ## Uso básico
 
@@ -82,12 +88,67 @@ Registra una clase en vivo (por CLI o MCP) y genera un apunte de repaso:
 
 ## Servidor MCP local
 
-El servidor MCP usa JSON-RPC por `stdio`:
+El servidor MCP usa JSON-RPC por `stdio`. Como el cliente MCP puede lanzar el
+binario desde cualquier directorio, usá el flag global `--root` para indicar el
+workspace de forma explícita:
 
 ```bash
-./apuntes mcp
-./apuntes mcp install --agent claude   # imprime el JSON de configuración
+./apuntes --root "$(pwd)" mcp
+./apuntes --root "$(pwd)" mcp install --agent claude   # JSON para Claude
+./apuntes --root "$(pwd)" mcp install --agent codex    # TOML para Codex
 ```
+
+Sin `--root` se usa el directorio actual, igual que antes. La configuración
+generada por `mcp install` incluye `--root` y la ruta absoluta del workspace,
+así que funciona desde un cwd distinto. `--agent codex` emite un fragmento de
+`config.toml`; `--agent claude` emite JSON. `--command <ruta>` permite indicar
+el binario, que debe ser una ruta absoluta. Salida de `--agent claude`:
+
+```json
+{
+  "mcpServers": {
+    "apuntes": {
+      "command": "/abs/repo/apuntes",
+      "args": ["--root", "/abs/repo", "mcp"]
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Agregá en `claude_desktop_config.json` (rutas absolutas):
+
+```json
+{
+  "mcpServers": {
+    "apuntes": {
+      "command": "/abs/repo/apuntes",
+      "args": ["--root", "/abs/repo", "mcp"]
+    }
+  }
+}
+```
+
+### Codex
+
+`./apuntes --root "$(pwd)" mcp install --agent codex` imprime el fragmento TOML
+que va en `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.apuntes]
+command = "/abs/repo/apuntes"
+args = ["--root", "/abs/repo", "mcp"]
+```
+
+### Claude Code
+
+```bash
+claude mcp add apuntes -- /abs/repo/apuntes --root /abs/repo mcp
+```
+
+Reemplazá `/abs/repo` por la ruta absoluta donde clonaste el repo (el mismo
+directorio que contiene `materiales/` y `data/`).
 
 Herramientas disponibles: `listar_materias`, `buscar_material`, `leer_fuente`, `sugerir_ruta_de_estudio`, `buscar_ejercicios`, `obtener_perfil`, `iniciar_clase`, `registrar_pregunta`, `cerrar_clase`, `guardar_progreso`, `resumir_historial` y `generar_resumen`. El índice se guarda en `data/index.db`; el contenido nunca sale del equipo.
 
@@ -157,15 +218,19 @@ Este repo es público y los apuntes en `materiales/` se publican a propósito.
 Para consultar los apuntes de otro (o compartir los tuyos) no hace falta
 ningún servidor:
 
-1. Cloná este repo (o el fork con los apuntes que te interesen).
+1. Cloná este repo (o el fork con los apuntes que te interesen):
+   ```bash
+   git clone https://github.com/FranprzDev/apuntes-cli.git
+   cd apuntes-cli
+   ```
 2. Compilá e indexá:
    ```bash
    go build -o apuntes ./cmd/apuntes
    ./apuntes init && ./apuntes ingest
    ```
 3. Consultá con `./apuntes search <query>` o conectá tu agente favorito por MCP
-   (`./apuntes mcp install --agent claude|codex`). Cada persona usa su propio
-   modelo; el índice y las fuentes quedan locales.
+   usando rutas absolutas `--root /abs/repo` (ver "Servidor MCP local"). Cada
+   persona usa su propio modelo; el índice y las fuentes quedan locales.
 
 ## Estructura
 

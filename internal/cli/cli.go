@@ -20,7 +20,11 @@ import (
 func usage(out io.Writer) {
 	fmt.Fprint(out, `apuntes — índice local de material de estudio
 
-Uso: apuntes <comando> [opciones]
+Uso: apuntes [--root <ruta>] <comando> [opciones]
+
+Opciones globales:
+  --root PATH              Workspace a usar (absoluto o relativo al cwd).
+                           Por defecto, el directorio actual.
 
 Comandos:
   init                     Inicializa el workspace (data/, materiales/)
@@ -59,14 +63,56 @@ func commandUsage(cmd string) string {
 	case "doctor":
 		return "uso: apuntes doctor"
 	case "mcp":
-		return "uso: apuntes mcp | apuntes mcp --http [addr] [--all-tools] | apuntes mcp install --agent claude|codex"
+		return "uso: apuntes mcp | apuntes mcp --http [addr] [--all-tools] | apuntes mcp install --agent claude|codex [--command <ruta>]"
 	default:
 		return "comando desconocido: " + cmd
 	}
 }
 
+// parseRoot extracts the global --root PATH flag that may appear before the
+// subcommand. It returns the absolute workspace path and the remaining args.
+// When the flag is absent the current working directory is used, preserving
+// the historical behavior.
+func parseRoot(args []string) (string, []string, error) {
+	var root string
+	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		switch {
+		case args[0] == "--root":
+			if len(args) < 2 || args[1] == "" || strings.HasPrefix(args[1], "-") {
+				return "", nil, errors.New("uso: apuntes --root <ruta> <comando> [opciones]: falta la ruta de --root")
+			}
+			root = args[1]
+			args = args[2:]
+		case strings.HasPrefix(args[0], "--root="):
+			root = strings.TrimPrefix(args[0], "--root=")
+			if root == "" {
+				return "", nil, errors.New("uso: apuntes --root <ruta> <comando> [opciones]: falta la ruta de --root")
+			}
+			args = args[1:]
+		default:
+			return "", nil, fmt.Errorf("opción global desconocida %q: uso: apuntes [--root <ruta>] <comando> [opciones]", args[0])
+		}
+	}
+	if root == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return "", nil, fmt.Errorf("no se pudo determinar el directorio actual: %w", err)
+		}
+		return wd, args, nil
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", nil, fmt.Errorf("ruta de --root inválida %q: %w", root, err)
+	}
+	return abs, args, nil
+}
+
 func Run(args []string, out io.Writer, in io.Reader) error {
-	root, _ := os.Getwd()
+	root, rest, err := parseRoot(args)
+	if err != nil {
+		return err
+	}
+	args = rest
 	if len(args) == 0 || args[0] == "help" {
 		if len(args) > 1 && args[0] == "help" {
 			fmt.Fprintln(out, commandUsage(args[1]))
