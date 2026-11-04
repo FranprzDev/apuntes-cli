@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/franciscoperez/apuntes-cli/internal/core"
+	"github.com/FranprzDev/apuntes-cli/internal/core"
 )
 
 func TestMCPStdioEndToEnd(t *testing.T) {

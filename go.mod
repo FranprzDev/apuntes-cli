@@ -1,4 +1,4 @@
-module github.com/franciscoperez/apuntes-cli
+module github.com/FranprzDev/apuntes-cli
 
 go 1.22
 

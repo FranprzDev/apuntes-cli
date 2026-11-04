@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/franciscoperez/apuntes-cli/internal/core"
-	"github.com/franciscoperez/apuntes-cli/internal/progress"
-	"github.com/franciscoperez/apuntes-cli/internal/session"
-	"github.com/franciscoperez/apuntes-cli/internal/summary"
+	"github.com/FranprzDev/apuntes-cli/internal/core"
+	"github.com/FranprzDev/apuntes-cli/internal/progress"
+	"github.com/FranprzDev/apuntes-cli/internal/session"
+	"github.com/FranprzDev/apuntes-cli/internal/summary"
 )
 
 type rpc struct {

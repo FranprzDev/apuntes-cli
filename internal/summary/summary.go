@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/franciscoperez/apuntes-cli/internal/core"
-	"github.com/franciscoperez/apuntes-cli/internal/session"
+	"github.com/FranprzDev/apuntes-cli/internal/core"
+	"github.com/FranprzDev/apuntes-cli/internal/session"
 )
 
 // keywords extracts the most frequent significant terms from the

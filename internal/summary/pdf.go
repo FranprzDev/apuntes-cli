@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/franciscoperez/apuntes-cli/internal/session"
+	"github.com/FranprzDev/apuntes-cli/internal/session"
 	"github.com/go-pdf/fpdf"
 )
 

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/franciscoperez/apuntes-cli/internal/core"
-	"github.com/franciscoperez/apuntes-cli/internal/session"
+	"github.com/FranprzDev/apuntes-cli/internal/core"
+	"github.com/FranprzDev/apuntes-cli/internal/session"
 )
 
 func TestGenerateSummaryWritesMDAndPDF(t *testing.T) {
