@@ -93,6 +93,9 @@ func parseHTTPArgs(args []string) (string, HTTPOptions, bool, error) {
 		}
 	}
 	opts.Token = os.Getenv("APUNTES_MCP_TOKEN")
+	if origins := os.Getenv("APUNTES_MCP_ALLOWED_ORIGINS"); origins != "" {
+		opts.AllowedOrigins = strings.Split(origins, ",")
+	}
 	return addr, opts, httpMode, nil
 }
 

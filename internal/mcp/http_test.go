@@ -131,3 +131,59 @@ func TestMCPHTTPBatch(t *testing.T) {
 		t.Fatalf("the notification must not produce a response entry: %#v", out)
 	}
 }
+
+func TestMCPHTTPOriginAndCORS(t *testing.T) {
+	a := newMCPFixture(t)
+	srv := httptest.NewServer(HTTPHandler(a, HTTPOptions{AllowedOrigins: []string{"https://inspector.example"}}))
+	defer srv.Close()
+
+	// A browser on an unrelated origin is rejected (DNS-rebinding guard).
+	req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	req.Header.Set("Origin", "https://evil.example")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("foreign origin should get 403, got %d", res.StatusCode)
+	}
+
+	// A whitelisted browser origin gets CORS headers and its request through.
+	req2, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	req2.Header.Set("Origin", "https://inspector.example")
+	res2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res2.Body.Close()
+	if res2.StatusCode != http.StatusOK || res2.Header.Get("Access-Control-Allow-Origin") != "https://inspector.example" {
+		t.Fatalf("whitelisted origin should pass with CORS headers, got %d %q", res2.StatusCode, res2.Header.Get("Access-Control-Allow-Origin"))
+	}
+
+	// Preflight from the whitelisted origin answers 204 with allow headers.
+	req3, _ := http.NewRequest(http.MethodOptions, srv.URL, nil)
+	req3.Header.Set("Origin", "https://inspector.example")
+	req3.Header.Set("Access-Control-Request-Method", "POST")
+	res3, err := http.DefaultClient.Do(req3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res3.Body.Close()
+	if res3.StatusCode != http.StatusNoContent || !strings.Contains(res3.Header.Get("Access-Control-Allow-Headers"), "Authorization") {
+		t.Fatalf("preflight should be 204 with allow headers, got %d %#v", res3.StatusCode, res3.Header)
+	}
+
+	// Same-host origin is allowed without any whitelist.
+	host := strings.TrimPrefix(srv.URL, "http://")
+	req4, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	req4.Header.Set("Origin", "http://"+host)
+	res4, err := http.DefaultClient.Do(req4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res4.Body.Close()
+	if res4.StatusCode != http.StatusOK {
+		t.Fatalf("same-host origin should pass, got %d", res4.StatusCode)
+	}
+}
