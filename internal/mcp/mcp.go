@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/FranprzDev/apuntes-cli/internal/core"
 	"github.com/FranprzDev/apuntes-cli/internal/progress"
@@ -313,10 +314,91 @@ func callTool(a *core.App, id any, name string, args map[string]any, ok func(any
 }
 
 func install(a *core.App, args []string, out io.Writer) error {
-	if len(args) < 2 {
-		return fmt.Errorf("uso: mcp install --agent claude|codex")
+	agent := ""
+	command := filepath.Join(a.Root, "apuntes")
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--agent":
+			if i+1 >= len(args) {
+				return fmt.Errorf("uso: mcp install --agent claude|codex [--command <ruta>]")
+			}
+			agent = args[i+1]
+			i++
+		case "--command":
+			if i+1 >= len(args) {
+				return fmt.Errorf("uso: mcp install --agent claude|codex [--command <ruta>]")
+			}
+			command = args[i+1]
+			i++
+		default:
+			return fmt.Errorf("uso: mcp install --agent claude|codex [--command <ruta>]")
+		}
 	}
-	cfg := map[string]any{"mcpServers": map[string]any{"apuntes": map[string]any{"command": filepath.Join(a.Root, "apuntes"), "args": []string{"mcp"}}}}
+	if agent != "claude" && agent != "codex" {
+		return fmt.Errorf("uso: mcp install --agent claude|codex [--command <ruta>]")
+	}
+	// A relative command would resolve against the MCP client's cwd, not the
+	// workspace, so require an absolute path to keep --root meaningful.
+	if !filepath.IsAbs(command) {
+		return fmt.Errorf("--command debe ser una ruta absoluta: %q", command)
+	}
+	argv := []string{"--root", a.Root, "mcp"}
+	if agent == "codex" {
+		fmt.Fprint(out, codexConfig(command, argv))
+		return nil
+	}
+	cfg := map[string]any{"mcpServers": map[string]any{"apuntes": map[string]any{
+		"command": command,
+		"args":    argv,
+	}}}
 	fmt.Fprintln(out, core.JSONString(cfg))
 	return nil
+}
+
+// codexConfig renders the ~/.codex/config.toml fragment for this server.
+func codexConfig(command string, argv []string) string {
+	quoted := make([]string, len(argv))
+	for i, a := range argv {
+		quoted[i] = tomlQuote(a)
+	}
+	return fmt.Sprintf("[mcp_servers.apuntes]\ncommand = %s\nargs = [%s]\n",
+		tomlQuote(command), strings.Join(quoted, ", "))
+}
+
+// tomlQuote encodes s as a TOML basic string. strconv.Quote is not suitable
+// because it emits Go-only escapes (\x, \a, \v, \U) that TOML rejects; this
+// uses the escapes TOML allows so unusual path characters stay valid.
+func tomlQuote(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\r':
+			b.WriteString(`\r`)
+		default:
+			if unicode.IsControl(r) {
+				if r > 0xFFFF {
+					fmt.Fprintf(&b, `\U%08X`, r)
+				} else {
+					fmt.Fprintf(&b, `\u%04X`, r)
+				}
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }

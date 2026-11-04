@@ -169,3 +169,113 @@ func TestMCPSearchUsesProfileFilterEndToEnd(t *testing.T) {
 		t.Fatalf("el filtro por perfil no se aplicó: %s", resp)
 	}
 }
+
+func TestInstallConfigIncludesRoot(t *testing.T) {
+	a := newMCPFixture(t)
+	var out bytes.Buffer
+	if err := Serve(a, bytes.NewBufferString(""), &out, []string{"install", "--agent", "claude"}); err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		MCPServers map[string]struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &cfg); err != nil {
+		t.Fatalf("invalid install JSON %q: %v", out.String(), err)
+	}
+	srv, ok := cfg.MCPServers["apuntes"]
+	if !ok {
+		t.Fatalf("missing apuntes server: %s", out.String())
+	}
+	want := []string{"--root", a.Root, "mcp"}
+	if strings.Join(srv.Args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("args = %v, want %v", srv.Args, want)
+	}
+	if !filepath.IsAbs(srv.Command) {
+		t.Fatalf("command should be absolute: %q", srv.Command)
+	}
+}
+
+func TestInstallCodexEmitsTOML(t *testing.T) {
+	a := newMCPFixture(t)
+	var out bytes.Buffer
+	if err := Serve(a, bytes.NewBufferString(""), &out, []string{"install", "--agent", "codex"}); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if strings.Contains(got, "mcpServers") || strings.Contains(got, "{") {
+		t.Fatalf("codex output should be TOML, not JSON: %s", got)
+	}
+	for _, want := range []string{
+		"[mcp_servers.apuntes]",
+		`command = ` + tomlQuote(filepath.Join(a.Root, "apuntes")),
+		`args = ["--root", ` + tomlQuote(a.Root) + `, "mcp"]`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("codex TOML missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestTomlQuoteUnusualCharacters(t *testing.T) {
+	// strconv.Quote would emit Go-only escapes (\x01, \a, \v, \U...) that
+	// TOML rejects, so paths with control characters must use \u escapes.
+	cases := map[string]string{
+		"plain/path":      `"plain/path"`,
+		"a\tb":            `"a\tb"`,
+		"a\x01b":          `"a\u0001b"`,
+		"a\\b":            `"a\\b"`,
+		"a\"b":            `"a\"b"`,
+		"acentuado/ñandú": `"acentuado/ñandú"`,
+	}
+	for in, want := range cases {
+		if got := tomlQuote(in); got != want {
+			t.Fatalf("tomlQuote(%q) = %s, want %s", in, got, want)
+		}
+	}
+	for _, s := range []string{"a\x01b", "a\x07b", "a\x0bb"} {
+		got := tomlQuote(s)
+		if strings.Contains(got, `\x`) || strings.Contains(got, `\a`) || strings.Contains(got, `\v`) {
+			t.Fatalf("tomlQuote(%q) contains a Go-only escape TOML rejects: %s", s, got)
+		}
+	}
+}
+
+func TestInstallRejectsRelativeCommand(t *testing.T) {
+	a := newMCPFixture(t)
+	for _, agent := range []string{"claude", "codex"} {
+		err := Serve(a, bytes.NewBufferString(""), &bytes.Buffer{}, []string{"install", "--agent", agent, "--command", "apuntes"})
+		if err == nil {
+			t.Fatalf("%s: relative --command should be rejected", agent)
+		}
+	}
+}
+
+func TestInstallAcceptsAbsoluteCommand(t *testing.T) {
+	a := newMCPFixture(t)
+	bin := filepath.Join(a.Root, "bin", "apuntes")
+	var out bytes.Buffer
+	if err := Serve(a, bytes.NewBufferString(""), &out, []string{"install", "--agent", "claude", "--command", bin}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), bin) {
+		t.Fatalf("output should use the custom command: %s", out.String())
+	}
+}
+
+func TestInstallRequiresAgent(t *testing.T) {
+	a := newMCPFixture(t)
+	cases := [][]string{
+		{"install"},
+		{"install", "--agent"},
+		{"install", "--agent", "vim"},
+		{"install", "--agent", "claude", "--bogus"},
+	}
+	for _, args := range cases {
+		if err := Serve(a, bytes.NewBufferString(""), &bytes.Buffer{}, args); err == nil {
+			t.Fatalf("%v: expected error", args)
+		}
+	}
+}

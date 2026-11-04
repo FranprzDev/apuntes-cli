@@ -154,6 +154,16 @@ func Generate(a *core.App, sessionPath string, wantPDF bool) (string, string, er
 	return dest, pdfPath, nil
 }
 
+// resolveSessionPath resolves a --sesion value against the workspace root,
+// not the process cwd, so relative paths work from any directory. Absolute
+// paths are preserved unchanged.
+func resolveSessionPath(root, p string) string {
+	if p == "" || filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(root, p)
+}
+
 func Cmd(a *core.App, args []string, out io.Writer) error {
 	sessionPath := ""
 	wantPDF := false
@@ -163,7 +173,7 @@ func Cmd(a *core.App, args []string, out io.Writer) error {
 			if i+1 >= len(args) {
 				return fmt.Errorf("uso: apuntes resumen [--sesion <archivo.json>] [--pdf]")
 			}
-			sessionPath = args[i+1]
+			sessionPath = resolveSessionPath(a.Root, args[i+1])
 			i++
 		case "--pdf":
 			wantPDF = true

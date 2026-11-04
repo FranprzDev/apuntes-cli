@@ -88,3 +88,70 @@ func TestSummaryPDF(t *testing.T) {
 		t.Fatalf("pdf inválido: %v", err)
 	}
 }
+
+// TestSummaryRelativeSessionFromForeignCwd checks that a relative --sesion is
+// resolved against the workspace root, not the process cwd.
+func TestSummaryRelativeSessionFromForeignCwd(t *testing.T) {
+	root := t.TempDir()
+	if _, err := session.Start(root, "Subnetting"); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AddEntry(root, "¿Qué es CIDR?", "Notación /n"); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := session.End(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(root, closed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := core.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	elsewhere := t.TempDir()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(elsewhere); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(wd) })
+
+	var out strings.Builder
+	if err := Cmd(a, []string{"--sesion", rel}, &out); err != nil {
+		t.Fatalf("resumen --sesion relativo: %v (%s)", err, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "resumenes", filepath.Base(strings.TrimSuffix(rel, ".json")+".md"))); err != nil {
+		t.Fatalf("resumen no generado bajo el root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(elsewhere, "resumenes")); !os.IsNotExist(err) {
+		t.Fatalf("resumen must not resolve --sesion against the foreign cwd")
+	}
+}
+
+// TestSummaryAbsoluteSessionStillWorks preserves absolute --sesion values.
+func TestSummaryAbsoluteSessionStillWorks(t *testing.T) {
+	root := t.TempDir()
+	if _, err := session.Start(root, "Subnetting"); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := session.End(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := core.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	var out strings.Builder
+	if err := Cmd(a, []string{"--sesion", closed}, &out); err != nil {
+		t.Fatalf("resumen --sesion absoluto: %v", err)
+	}
+}
