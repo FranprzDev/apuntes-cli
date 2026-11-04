@@ -46,7 +46,7 @@ go build -o apuntes ./cmd/apuntes
 O instalalo directo:
 
 ```bash
-go install github.com/franciscoperez/apuntes-cli/cmd/apuntes@latest
+go install github.com/FranprzDev/apuntes-cli/cmd/apuntes@latest
 ```
 
 Las releases también publican binarios para Linux/macOS/Windows vía [goreleaser](https://goreleaser.com).

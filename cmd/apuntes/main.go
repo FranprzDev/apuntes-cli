@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/franciscoperez/apuntes-cli/internal/cli"
+	"github.com/FranprzDev/apuntes-cli/internal/cli"
 )
 
 func main() {
