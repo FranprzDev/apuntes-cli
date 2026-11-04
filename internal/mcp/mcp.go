@@ -59,6 +59,10 @@ func Serve(a *core.App, in io.Reader, out io.Writer, args []string) error {
 		if json.Unmarshal(sc.Bytes(), &req) != nil {
 			continue
 		}
+		if strings.HasPrefix(req.Method, "notifications/") || req.ID == nil {
+			handleRPC(a, req, nil)
+			continue
+		}
 		res := handleRPC(a, req, nil)
 		if err := enc.Encode(res); err != nil {
 			return err
@@ -129,10 +133,14 @@ func handleRPC(a *core.App, r rpc, allow func(string) bool) response {
 		var params struct {
 			ProtocolVersion string `json:"protocolVersion"`
 		}
-		if json.Unmarshal(r.Params, &params) == nil && params.ProtocolVersion != "" {
-			// The tool surface is identical across these revisions; answer
-			// with the version the client asked for.
-			version = params.ProtocolVersion
+		if json.Unmarshal(r.Params, &params) == nil {
+			// The tool surface is identical across these revisions; echo the
+			// client's version only if we actually support it. For anything
+			// else we answer with our oldest supported revision.
+			switch params.ProtocolVersion {
+			case "2024-11-05", "2025-06-18":
+				version = params.ProtocolVersion
+			}
 		}
 		return ok(map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "apuntes-cli", "version": "0.1.0"}})
 	case "notifications/initialized":

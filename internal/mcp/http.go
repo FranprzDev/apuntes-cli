@@ -2,8 +2,11 @@ package mcp
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -69,7 +72,7 @@ func HTTPHandler(a *core.App, opts HTTPOptions) http.Handler {
 		if origin := r.Header.Get("Origin"); origin != "" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id, MCP-Protocol-Version")
+			w.Header().Set("Access-Control-Expose-Headers", "MCP-Protocol-Version")
 			if r.Method == http.MethodOptions {
 				w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID")
@@ -77,7 +80,7 @@ func HTTPHandler(a *core.App, opts HTTPOptions) http.Handler {
 				return
 			}
 		}
-		if opts.Token != "" && r.Header.Get("Authorization") != "Bearer "+opts.Token {
+		if opts.Token != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+opts.Token)) != 1 {
 			writeHTTPJSON(w, http.StatusUnauthorized, response{"2.0", nil, nil, map[string]any{"code": -32001, "message": "token inválido o ausente"}})
 			return
 		}
@@ -86,9 +89,20 @@ func HTTPHandler(a *core.App, opts HTTPOptions) http.Handler {
 			http.Error(w, "método no soportado: este endpoint solo acepta POST JSON-RPC", http.StatusMethodNotAllowed)
 			return
 		}
+		if ct := r.Header.Get("Content-Type"); ct != "" {
+			if mediaType, _, err := mime.ParseMediaType(ct); err != nil || mediaType != "application/json" {
+				http.Error(w, "Content-Type no soportado: se espera application/json", http.StatusUnsupportedMediaType)
+				return
+			}
+		}
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 		if err != nil {
-			writeHTTPJSON(w, http.StatusRequestEntityTooLarge, response{"2.0", nil, nil, map[string]any{"code": -32700, "message": "no se pudo leer el cuerpo"}})
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				writeHTTPJSON(w, http.StatusRequestEntityTooLarge, response{"2.0", nil, nil, map[string]any{"code": -32700, "message": "cuerpo demasiado grande"}})
+				return
+			}
+			writeHTTPJSON(w, http.StatusBadRequest, response{"2.0", nil, nil, map[string]any{"code": -32700, "message": "no se pudo leer el cuerpo"}})
 			return
 		}
 		body = bytes.TrimSpace(body)

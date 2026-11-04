@@ -96,6 +96,9 @@ Herramientas disponibles: `listar_materias`, `buscar_material`, `leer_fuente`, `
 Además de stdio, el servidor puede exponerse por HTTP (streamable HTTP, POST
 JSON-RPC) para que otras personas conecten su agente **sin clonar el repo**:
 
+El endpoint es JSON-RPC sobre `POST`; cada request recibe una respuesta JSON y
+no se emiten streams SSE.
+
 ```bash
 ./apuntes mcp --http 0.0.0.0:8080                              # solo lectura, abierto
 APUNTES_MCP_TOKEN=secreto ./apuntes mcp --http 0.0.0.0:8080    # con Bearer token
@@ -136,10 +139,11 @@ punta a punta contra un despliegue):
   ```json
   { "mcpServers": { "apuntes": { "httpUrl": "https://tu-host/" } } }
   ```
-- **ChatGPT**: los conectores MCP personalizados están limitados a planes
-  Business, Enterprise y Edu según la documentación de OpenAI (revisada el
-  2026-10-30); en planes personales no hay una vía documentada para
-  conectar una URL propia.
+- **ChatGPT**: según la documentación oficial de OpenAI (revisada el
+  2026-11-04), los planes Pro pueden conectar servidores MCP personalizados
+  con permisos de solo lectura/fetch; el MCP completo (con escritura) está
+  limitado a Business, Enterprise y Edu; el plan Free no tiene una vía
+  documentada.
 
 Notas de despliegue: el índice (`data/index.db`) se genera con
 `apuntes ingest` y las consultas son de solo lectura, así que un filesystem
