@@ -113,6 +113,11 @@ APUNTES_MCP_TOKEN=secreto ./apuntes mcp --http 0.0.0.0:8080    # con Bearer toke
 - `APUNTES_MCP_TOKEN` agrega autenticación Bearer. Sin token el endpoint
   queda abierto: los apuntes de `materiales/` se publican a propósito, pero
   cualquiera que llegue al puerto puede consultarlos.
+- El servidor valida el header `Origin` (protección contra DNS rebinding):
+  los clientes de línea de comandos no se ven afectados; un navegador solo
+  puede llamarlo desde el mismo host o desde orígenes listados en
+  `APUNTES_MCP_ALLOWED_ORIGINS` (separados por coma), que además habilita
+  CORS para esos orígenes.
 
 ### Conectar un agente al endpoint remoto
 

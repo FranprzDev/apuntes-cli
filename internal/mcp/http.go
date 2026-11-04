@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -29,6 +30,10 @@ type HTTPOptions struct {
 	AllTools bool
 	// Token, when set, requires clients to send "Authorization: Bearer <token>".
 	Token string
+	// AllowedOrigins lists extra browser origins (besides the server's own
+	// host) that may call the endpoint. Comes from
+	// APUNTES_MCP_ALLOWED_ORIGINS (comma-separated), never from the CLI.
+	AllowedOrigins []string
 }
 
 func (o HTTPOptions) allows(name string) bool {
@@ -55,6 +60,23 @@ func ServeHTTP(a *core.App, addr string, opts HTTPOptions) error {
 // behind a reverse proxy or exercised with httptest.
 func HTTPHandler(a *core.App, opts HTTPOptions) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); origin != "" && !originAllowed(origin, r.Host, opts.AllowedOrigins) {
+			// MCP servers must validate Origin to stop DNS-rebinding: a
+			// browser on an unrelated site must not reach the server.
+			http.Error(w, "origen no permitido", http.StatusForbidden)
+			return
+		}
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id, MCP-Protocol-Version")
+			if r.Method == http.MethodOptions {
+				w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID")
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
 		if opts.Token != "" && r.Header.Get("Authorization") != "Bearer "+opts.Token {
 			writeHTTPJSON(w, http.StatusUnauthorized, response{"2.0", nil, nil, map[string]any{"code": -32001, "message": "token inválido o ausente"}})
 			return
@@ -117,6 +139,26 @@ func handleHTTPRPC(a *core.App, opts HTTPOptions, req rpc) (response, bool) {
 		return response{"2.0", nil, nil, map[string]any{"code": -32600, "message": "falta id"}}, true
 	}
 	return handleRPC(a, req, opts.allows), true
+}
+
+// originAllowed reports whether a browser Origin may talk to the server:
+// same-host origins always, plus anything listed in
+// APUNTES_MCP_ALLOWED_ORIGINS. Requests without an Origin header are not
+// browser same-origin-policy traffic (curl, MCP clients) and skip this.
+func originAllowed(origin, host string, extra []string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if strings.EqualFold(u.Host, host) {
+		return true
+	}
+	for _, allowed := range extra {
+		if strings.EqualFold(strings.TrimSpace(allowed), u.Host) || strings.EqualFold(strings.TrimSpace(allowed), origin) {
+			return true
+		}
+	}
+	return false
 }
 
 func writeHTTPJSON(w http.ResponseWriter, status int, v any) {
